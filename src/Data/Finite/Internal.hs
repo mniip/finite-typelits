@@ -20,4 +20,4 @@ import GHC.TypeLits
 --
 -- prop> getFinite x < natVal x
 -- prop> getFinite x >= 0
-data Finite (n :: Nat) = Finite Integer
+newtype Finite (n :: Nat) = Finite Integer
