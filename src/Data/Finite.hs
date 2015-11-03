@@ -21,7 +21,8 @@ module Data.Finite
         weakenProxy, strengthenProxy, shiftProxy, unshiftProxy,
         add, sub, multiply,
         combineSum, combineProduct,
-        separateSum, separateProduct
+        separateSum, separateProduct,
+        isValidFinite
     )
     where
 
@@ -29,7 +30,7 @@ import Data.Maybe
 import Data.Ratio
 import GHC.TypeLits
 
-import Data.Finite.Internal
+import Data.Finite.Internal (Finite(Finite))
 
 -- | Convert an 'Integer' into a 'Finite', returning 'Nothing' if the input is out of bounds.
 packFinite :: KnownNat n => Integer -> Maybe (Finite n)
@@ -225,3 +226,7 @@ separateProduct :: KnownNat n => Finite (n * m) -> (Finite n, Finite m)
 separateProduct (Finite x) = result
     where
         result = (Finite $ x `mod` natVal (fst result), Finite $ x `div` natVal (fst result))
+
+-- | Verifies that a given 'Finite' is valid. Should always return 'True' unles you bring the @Data.Finite.Internal.Finite@ constructor into the scope, or use 'Unsafe.Coerce.unsafeCoerce' or other nasty hacks
+isValidFinite :: KnownNat n => Finite n -> Bool
+isValidFinite fx@(Finite x) = x < natVal fx && x >= 0
