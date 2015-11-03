@@ -10,7 +10,9 @@ module Data.Finite
         weaken, strengthen, shift, unshift,
         weakenN, strengthenN, shiftN, unshiftN,
         weakenProxy, strengthenProxy, shiftProxy, unshiftProxy,
-        add, sub, multiply
+        add, sub, multiply,
+        combineSum, combineProduct,
+        separateSum, separateProduct
     )
     where
 
@@ -188,3 +190,29 @@ sub (Finite x) (Finite y) = if x >= y
 -- | Multiply two 'Finite's.
 multiply :: Finite n -> Finite m -> Finite (n * m)
 multiply (Finite x) (Finite y) = Finite $ x * y
+
+getLeftType :: Either a b -> a
+getLeftType = error "getLeftType"
+
+-- | 'Left'-biased (left values come first) disjoint union of finite sets.
+combineSum :: KnownNat n => Either (Finite n) (Finite m) -> Finite (n + m)
+combineSum (Left (Finite x)) = Finite x
+combineSum efx@(Right (Finite x)) = Finite $ x + natVal (getLeftType efx)
+
+-- | 'fst'-biased (fst is the inner, and snd is the outer iteratee) product of finite sets.
+combineProduct :: KnownNat n => (Finite n, Finite m) -> Finite (n * m)
+combineProduct (fx@(Finite x), Finite y) = Finite $ x + y * natVal fx
+
+-- | Take a 'Left'-biased disjoint union apart.
+separateSum :: KnownNat n => Finite (n + m) -> Either (Finite n) (Finite m)
+separateSum (Finite x) = result
+    where
+        result = if x >= natVal (getLeftType result)
+            then Right $ Finite $ x - natVal (getLeftType result)
+            else Left $ Finite x
+
+-- | Take a 'fst'-biased product apart.
+separateProduct :: KnownNat n => Finite (n * m) -> (Finite n, Finite m)
+separateProduct (Finite x) = result
+    where
+        result = (Finite $ x `mod` natVal (fst result), Finite $ x `div` natVal (fst result))
