@@ -1,3 +1,12 @@
+--------------------------------------------------------------------------------
+-- |
+-- Module      :  Data.Finite
+-- Copyright   :  (C) 2015 mniip
+-- License     :  BSD3
+-- Maintainer  :  mniip <mniip@mniip.com>
+-- Stability   :  experimental
+-- Portability :  portable
+--------------------------------------------------------------------------------
 {-# LANGUAGE TypeOperators, DataKinds, TypeFamilies, FlexibleContexts #-}
 module Data.Finite
     (
