@@ -29,6 +29,7 @@ module Data.Finite
 import Data.Maybe
 import Data.Ratio
 import GHC.TypeLits
+import Control.DeepSeq
 
 import Data.Finite.Internal (Finite(Finite))
 
@@ -116,6 +117,8 @@ instance KnownNat n => Real (Finite n) where
 instance KnownNat n => Integral (Finite n) where
     quotRem (Finite x) (Finite y) = (Finite $ x `quot` y, Finite $ x `rem` y)
     toInteger (Finite x) = x
+
+instance NFData (Finite n)
 
 -- | Convert a type-level literal into a 'Finite'.
 natToFinite :: (KnownNat n, KnownNat m, n + 1 <= m) => proxy n -> Finite m
