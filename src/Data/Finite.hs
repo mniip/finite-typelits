@@ -13,7 +13,7 @@ module Data.Finite
         Finite,
         packFinite, packFiniteProxy,
         finite, finiteProxy,
-        getFinite,
+        getFinite, finites, finitesProxy,
         equals, cmp,
         natToFinite,
         weaken, strengthen, shift, unshift,
@@ -28,6 +28,7 @@ module Data.Finite
 
 import Data.Maybe
 import GHC.TypeLits
+import Data.Proxy
 
 import Data.Finite.Internal
 
@@ -46,6 +47,14 @@ packFiniteProxy _ = packFinite
 -- | Same as 'finite' but with a proxy argument to avoid type signatures.
 finiteProxy :: KnownNat n => proxy n -> Integer -> Finite n
 finiteProxy _ = finite
+
+-- | Generate a list of length @n@ of all elements of @'Finite' n@.
+finites :: KnownNat n => [Finite n]
+finites = finitesProxy Proxy
+
+-- | Same as 'finites' but with a proxy argument to avoid type signatures.
+finitesProxy :: KnownNat n => Proxy n -> [Finite n]
+finitesProxy p = Finite <$> [0 .. (natVal p - 1)]
 
 -- | Test two different types of finite numbers for equality.
 equals :: Finite n -> Finite m -> Bool
