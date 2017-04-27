@@ -28,7 +28,6 @@ module Data.Finite
 
 import Data.Maybe
 import GHC.TypeLits
-import Data.Proxy
 
 import Data.Finite.Internal
 
@@ -50,11 +49,13 @@ finiteProxy _ = finite
 
 -- | Generate a list of length @n@ of all elements of @'Finite' n@.
 finites :: KnownNat n => [Finite n]
-finites = finitesProxy Proxy
+finites = results
+  where
+    results = Finite <$> [0 .. (natVal (head results) - 1)]
 
 -- | Same as 'finites' but with a proxy argument to avoid type signatures.
-finitesProxy :: KnownNat n => Proxy n -> [Finite n]
-finitesProxy p = Finite <$> [0 .. (natVal p - 1)]
+finitesProxy :: KnownNat n => proxy n -> [Finite n]
+finitesProxy _ = finites
 
 -- | Test two different types of finite numbers for equality.
 equals :: Finite n -> Finite m -> Bool
