@@ -13,7 +13,7 @@ module Data.Finite
         Finite,
         packFinite, packFiniteProxy,
         finite, finiteProxy,
-        getFinite,
+        getFinite, finites, finitesProxy,
         equals, cmp,
         natToFinite,
         weaken, strengthen, shift, unshift,
@@ -46,6 +46,16 @@ packFiniteProxy _ = packFinite
 -- | Same as 'finite' but with a proxy argument to avoid type signatures.
 finiteProxy :: KnownNat n => proxy n -> Integer -> Finite n
 finiteProxy _ = finite
+
+-- | Generate a list of length @n@ of all elements of @'Finite' n@.
+finites :: KnownNat n => [Finite n]
+finites = results
+  where
+    results = Finite <$> [0 .. (natVal (head results) - 1)]
+
+-- | Same as 'finites' but with a proxy argument to avoid type signatures.
+finitesProxy :: KnownNat n => proxy n -> [Finite n]
+finitesProxy _ = finites
 
 -- | Test two different types of finite numbers for equality.
 equals :: Finite n -> Finite m -> Bool
