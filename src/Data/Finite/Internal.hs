@@ -7,7 +7,7 @@
 -- Stability   :  experimental
 -- Portability :  portable
 --------------------------------------------------------------------------------
-{-# LANGUAGE KindSignatures, DataKinds, DeriveGeneric #-}
+{-# LANGUAGE KindSignatures, DataKinds, DeriveGeneric, TypeOperators, TypeFamilies #-}
 module Data.Finite.Internal
     (
         Finite(Finite),
@@ -40,20 +40,11 @@ finite x = result
 getFinite :: Finite n -> Integer
 getFinite (Finite x) = x
 
--- | Throws an error for @'Finite' 0@
-instance KnownNat n => Bounded (Finite n) where
-    maxBound = result
-        where
-            result = if natVal result > 0
-                then Finite $ natVal result - 1
-                else error "maxBound: Finite 0 is uninhabited"
-    minBound = result
-        where
-            result = if natVal result > 0
-                then Finite 0
-                else error "minBound: Finite 0 is uninhabited"
+instance (KnownNat n, 1 <= n) => Bounded (Finite n) where
+    maxBound = result where result = Finite $ natVal result - 1
+    minBound = Finite 0
 
-instance KnownNat n => Enum (Finite n) where
+instance (KnownNat n, 1 <= n) => Enum (Finite n) where
     fromEnum = fromEnum . getFinite
     toEnum = finite . toEnum
     enumFrom x = enumFromTo x maxBound
@@ -78,7 +69,7 @@ instance KnownNat n => Num (Finite n) where
 instance KnownNat n => Real (Finite n) where
     toRational (Finite x) = x % 1
 
-instance KnownNat n => Integral (Finite n) where
+instance (KnownNat n, 1 <= n) => Integral (Finite n) where
     quotRem (Finite x) (Finite y) = (Finite $ x `quot` y, Finite $ x `rem` y)
     toInteger (Finite x) = x
 
