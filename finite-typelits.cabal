@@ -1,5 +1,5 @@
 name:                finite-typelits
-version:             0.1.2.0
+version:             0.1.3.0
 synopsis:            A type inhabited by finitely many values, indexed by type-level naturals.
 description:         A type inhabited by finitely many values, indexed by type-level naturals.
 homepage:            https://github.com/mniip/finite-typelits
