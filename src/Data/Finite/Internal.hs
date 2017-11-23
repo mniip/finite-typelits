@@ -16,10 +16,14 @@ module Data.Finite.Internal
     )
     where
 
+import GHC.Read
 import GHC.TypeLits
 import GHC.Generics
 import Control.DeepSeq
+import Control.Monad
 import Data.Ratio
+import Text.Read.Lex
+import Text.ParserCombinators.ReadPrec
 
 -- | Finite number type. @'Finite' n@ is inhabited by exactly @n@ values. Invariants:
 --
@@ -61,6 +65,14 @@ instance KnownNat n => Enum (Finite n) where
 
 instance Show (Finite n) where
     showsPrec d (Finite x) = showParen (d > 9) $ showString "finite " . showsPrec 10 x
+
+instance KnownNat n => Read (Finite n) where
+    readPrec = parens $ Text.ParserCombinators.ReadPrec.prec 10 $ do 
+                 expectP (Ident "finite")
+                 x <- readPrec
+                 let result = finite x
+                 guard (x >= 0 && x < natVal result) 
+                 return result
 
 -- | Modulo arithmetic. Only the 'fromInteger' function is supposed to be useful.
 instance KnownNat n => Num (Finite n) where
