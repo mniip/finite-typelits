@@ -179,3 +179,12 @@ separateProduct (Finite x) = result
 -- | Verifies that a given 'Finite' is valid. Should always return 'True' unles you bring the @Data.Finite.Internal.Finite@ constructor into the scope, or use 'Unsafe.Coerce.unsafeCoerce' or other nasty hacks
 isValidFinite :: KnownNat n => Finite n -> Bool
 isValidFinite fx@(Finite x) = x < natVal fx && x >= 0
+
+-- | Interpret an 'Integer' as a member of a congruency class of @(`mod`
+-- n)@
+--
+-- Essentially 'fromInteger' precomposed with 'mod'.
+modClass :: KnownNat n => Integer -> Finite n
+modClass x = result
+  where
+    result = Finite (x `mod` natVal result)
