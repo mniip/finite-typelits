@@ -181,11 +181,11 @@ separateProduct (Finite x) = result
 isValidFinite :: KnownNat n => Finite n -> Bool
 isValidFinite fx@(Finite x) = x < natVal fx && x >= 0
 
--- | Interpret an 'Integer' as a member of a congruency class of @(`mod`
+-- | Interpret an 'Integral' as a member of a congruency class of @(`mod`
 -- n)@
 --
--- Essentially 'fromInteger' precomposed with 'mod'.
-modClass :: KnownNat n => Integer -> Finite n
+-- Essentially 'fromIntegral' precomposed with 'mod'.
+modClass :: (Integral a, KnownNat n) => a -> Finite n
 modClass x = result
   where
-    result = Finite (x `mod` natVal result)
+    result = Finite (fromIntegral x `mod` natVal result)
