@@ -16,6 +16,7 @@ module Data.Finite
         getFinite, finites, finitesProxy,
         equals, cmp,
         natToFinite,
+        modClass,
         weaken, strengthen, shift, unshift,
         weakenN, strengthenN, shiftN, unshiftN,
         weakenProxy, strengthenProxy, shiftProxy, unshiftProxy,
