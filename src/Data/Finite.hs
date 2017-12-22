@@ -72,23 +72,19 @@ natToFinite p = Finite $ natVal p
 
 -- | Add one inhabitant in the end.
 weaken :: forall n. Finite n -> Finite (n + 1)
-weaken (Finite x) = Finite x
+weaken = weakenProxy (Proxy @1)
 
 -- | Remove one inhabitant from the end. Returns 'Nothing' if the input was the removed inhabitant.
 strengthen :: forall n. KnownNat n => Finite (n + 1) -> Maybe (Finite n)
-strengthen (Finite x) = if x < natVal (Proxy @n)
-                           then Just $ Finite x
-                           else Nothing
+strengthen = strengthenProxy (Proxy @1)
 
 -- | Add one inhabitant in the beginning, shifting everything up by one.
 shift :: forall n. Finite n -> Finite (n + 1)
-shift (Finite x) = Finite (x + 1)
+shift = shiftProxy (Proxy @1)
 
 -- | Remove one inhabitant from the beginning, shifting everything down by one. Returns 'Nothing' if the input was the removed inhabitant.
 unshift :: forall n. Finite (n + 1) -> Maybe (Finite n)
-unshift (Finite x) = if x < 1
-                        then Nothing
-                        else Just $ Finite $ x - 1
+unshift = unshiftProxy (Proxy @1)
 
 -- m comes before n in the following because it's more likely the expanded size needs to be explict than the input size.
 -- | Add multiple inhabitants in the end.
@@ -98,8 +94,8 @@ weakenN (Finite x) = Finite x
 -- | Remove multiple inhabitants from the end. Returns 'Nothing' if the input was one of the removed inhabitants.
 strengthenN :: forall m n. (KnownNat n, n <= m) => Finite m -> Maybe (Finite n)
 strengthenN (Finite x) = if x < natVal (Proxy @n)
-            then Just $ Finite x
-            else Nothing
+                            then Just $ Finite x
+                            else Nothing
 
 -- | Add multiple inhabitant in the beginning, shifting everything up by the amount of inhabitants added.
 shiftN :: forall m n. (KnownNat (m - n), n <= m) => Finite n -> Finite m
