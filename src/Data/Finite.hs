@@ -7,7 +7,7 @@
 -- Stability   :  experimental
 -- Portability :  portable
 --------------------------------------------------------------------------------
-{-# LANGUAGE TypeOperators, DataKinds, TypeFamilies, FlexibleContexts #-}
+{-# LANGUAGE TypeOperators, DataKinds, TypeFamilies, FlexibleContexts, ExistentialQuantification, ScopedTypeVariables #-}
 module Data.Finite
     (
         Finite,
@@ -22,12 +22,16 @@ module Data.Finite
         add, sub, multiply,
         combineSum, combineProduct,
         separateSum, separateProduct,
+        finite0Absurd, FiniteNat(..), finiteNatVal,
         isValidFinite
     )
     where
 
 import Data.Maybe
+import Data.Proxy
+import Data.Type.Equality
 import GHC.TypeLits
+import Unsafe.Coerce
 
 import Data.Finite.Internal
 
@@ -175,6 +179,18 @@ separateProduct :: KnownNat n => Finite (n * m) -> (Finite n, Finite m)
 separateProduct (Finite x) = result
     where
         result = (Finite $ x `mod` natVal (fst result), Finite $ x `div` natVal (fst result))
+
+-- | Witness to the fact that @'Finite' 0@ has no values.
+finite0Absurd :: Finite 0 -> a
+finite0Absurd f@(Finite _) = error $ "finite0Absurd: impossible; called with " ++ show f
+
+-- | Representation of the unknown type-level number inside a @'Finite' n@
+data FiniteNat n = forall m. (m + 1 <= n, KnownNat m) => FiniteNat (Proxy m)
+-- | Witness to the fact that a @'Finite' n@ contains some number @m@ where @0 <= m < n@.
+finiteNatVal :: forall n. Finite n -> FiniteNat n
+finiteNatVal f@(Finite m) = case someNatVal m of
+                                 Just (SomeNat (p :: Proxy m)) -> case unsafeCoerce Refl :: ((m + 1) <=? n) :~: True of Refl -> FiniteNat p
+                                 Nothing -> error $ "finiteNatVal: impossible negative " ++ show f
 
 -- | Verifies that a given 'Finite' is valid. Should always return 'True' unles you bring the @Data.Finite.Internal.Finite@ constructor into the scope, or use 'Unsafe.Coerce.unsafeCoerce' or other nasty hacks
 isValidFinite :: KnownNat n => Finite n -> Bool
