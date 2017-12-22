@@ -70,9 +70,9 @@ instance KnownNat n => Read (Finite n) where
 
 -- | Modulo arithmetic. Only the 'fromInteger' function is supposed to be useful.
 instance KnownNat n => Num (Finite n) where
-    Finite x + Finite y = Finite $ (x + y) `mod` natVal (Proxy @n)
+    Finite x + Finite y = Finite $ (x + y) `rem` natVal (Proxy @n)
     Finite x - Finite y = Finite $ (x - y) `mod` natVal (Proxy @n)
-    Finite x * Finite y = Finite $ (x * y) `mod` natVal (Proxy @n)
+    Finite x * Finite y = Finite $ (x * y) `rem` natVal (Proxy @n)
     abs = id
     signum (Finite x) = Finite $ signum x
     fromInteger x = if x < natVal (Proxy @n) && x >= 0
