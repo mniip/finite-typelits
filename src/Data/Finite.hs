@@ -7,7 +7,7 @@
 -- Stability   :  experimental
 -- Portability :  portable
 --------------------------------------------------------------------------------
-{-# LANGUAGE TypeOperators, DataKinds, TypeFamilies, FlexibleContexts #-}
+{-# LANGUAGE TypeOperators, DataKinds, TypeFamilies, FlexibleContexts, ExistentialQuantification, ScopedTypeVariables, TypeApplications, AllowAmbiguousTypes #-}
 module Data.Finite
     (
         Finite,
@@ -22,122 +22,110 @@ module Data.Finite
         add, sub, multiply,
         combineSum, combineProduct,
         separateSum, separateProduct,
+        finite0Absurd, FiniteNat(..), finiteNatVal,
         isValidFinite
     )
     where
 
 import Data.Maybe
+import Data.Proxy
+import Data.Type.Equality
 import GHC.TypeLits
+import Unsafe.Coerce
 
 import Data.Finite.Internal
 
 -- | Convert an 'Integer' into a 'Finite', returning 'Nothing' if the input is out of bounds.
-packFinite :: KnownNat n => Integer -> Maybe (Finite n)
-packFinite x = result
-    where
-        result = if x < natVal (fromJust result) && x >= 0
-            then Just $ Finite x
-            else Nothing
+packFinite :: forall n. KnownNat n => Integer -> Maybe (Finite n)
+packFinite x = if x < natVal (Proxy @n) && x >= 0
+                  then Just $ Finite x
+                  else Nothing
 
 -- | Same as 'packFinite' but with a proxy argument to avoid type signatures.
-packFiniteProxy :: KnownNat n => proxy n -> Integer -> Maybe (Finite n)
+packFiniteProxy :: forall n proxy. KnownNat n => proxy n -> Integer -> Maybe (Finite n)
 packFiniteProxy _ = packFinite
 
 -- | Same as 'finite' but with a proxy argument to avoid type signatures.
-finiteProxy :: KnownNat n => proxy n -> Integer -> Finite n
+finiteProxy :: forall n proxy. KnownNat n => proxy n -> Integer -> Finite n
 finiteProxy _ = finite
 
 -- | Generate a list of length @n@ of all elements of @'Finite' n@.
-finites :: KnownNat n => [Finite n]
-finites = results
-  where
-    results = Finite <$> [0 .. (natVal (head results) - 1)]
+finites :: forall n. KnownNat n => [Finite n]
+finites = Finite <$> [0..natVal (Proxy @n) - 1]
 
 -- | Same as 'finites' but with a proxy argument to avoid type signatures.
-finitesProxy :: KnownNat n => proxy n -> [Finite n]
+finitesProxy :: forall n proxy. KnownNat n => proxy n -> [Finite n]
 finitesProxy _ = finites
 
 -- | Test two different types of finite numbers for equality.
-equals :: Finite n -> Finite m -> Bool
+equals :: forall n m. Finite n -> Finite m -> Bool
 equals (Finite x) (Finite y) = x == y
 infix 4 `equals`
 
 -- | Compare two different types of finite numbers.
-cmp :: Finite n -> Finite m -> Ordering
+cmp :: forall n m. Finite n -> Finite m -> Ordering
 cmp (Finite x) (Finite y) = x `compare` y
 
 -- | Convert a type-level literal into a 'Finite'.
-natToFinite :: (KnownNat n, KnownNat m, n + 1 <= m) => proxy n -> Finite m
+natToFinite :: forall n m proxy. (KnownNat n, n + 1 <= m) => proxy n -> Finite m
 natToFinite p = Finite $ natVal p
 
 -- | Add one inhabitant in the end.
-weaken :: Finite n -> Finite (n + 1)
-weaken (Finite x) = Finite x
+weaken :: forall n. Finite n -> Finite (n + 1)
+weaken = weakenProxy (Proxy @1)
 
 -- | Remove one inhabitant from the end. Returns 'Nothing' if the input was the removed inhabitant.
-strengthen :: KnownNat n => Finite (n + 1) -> Maybe (Finite n)
-strengthen (Finite x) = result
-    where
-        result = if x < natVal (fromJust result)
-            then Just $ Finite x
-            else Nothing
+strengthen :: forall n. KnownNat n => Finite (n + 1) -> Maybe (Finite n)
+strengthen = strengthenProxy (Proxy @1)
 
 -- | Add one inhabitant in the beginning, shifting everything up by one.
-shift :: Finite n -> Finite (n + 1)
-shift (Finite x) = Finite (x + 1)
+shift :: forall n. Finite n -> Finite (n + 1)
+shift = shiftProxy (Proxy @1)
 
 -- | Remove one inhabitant from the beginning, shifting everything down by one. Returns 'Nothing' if the input was the removed inhabitant.
-unshift :: Finite (n + 1) -> Maybe (Finite n)
-unshift (Finite x) = if x < 1
-    then Nothing
-    else Just $ Finite $ x - 1
+unshift :: forall n. Finite (n + 1) -> Maybe (Finite n)
+unshift = unshiftProxy (Proxy @1)
 
+-- m comes before n in the following because it's more likely the expanded size needs to be explict than the input size.
 -- | Add multiple inhabitants in the end.
-weakenN :: (n <= m) => Finite n -> Finite m
+weakenN :: forall m n. n <= m => Finite n -> Finite m
 weakenN (Finite x) = Finite x
 
 -- | Remove multiple inhabitants from the end. Returns 'Nothing' if the input was one of the removed inhabitants.
-strengthenN :: (KnownNat n, n <= m) => Finite m -> Maybe (Finite n)
-strengthenN (Finite x) = result
-    where
-        result = if x < natVal (fromJust result)
-            then Just $ Finite x
-            else Nothing
+strengthenN :: forall m n. (KnownNat n, n <= m) => Finite m -> Maybe (Finite n)
+strengthenN (Finite x) = if x < natVal (Proxy @n)
+                            then Just $ Finite x
+                            else Nothing
 
 -- | Add multiple inhabitant in the beginning, shifting everything up by the amount of inhabitants added.
-shiftN :: (KnownNat n, KnownNat m, n <= m) => Finite n -> Finite m
-shiftN fx@(Finite x) = result
-    where
-        result = Finite $ x + natVal result - natVal fx
+shiftN :: forall m n. (KnownNat (m - n), n <= m) => Finite n -> Finite m
+shiftN (Finite x) = Finite $ x + natVal (Proxy @(m - n))
 
 -- | Remove multiple inhabitants from the beginning, shifting everything down by the amount of inhabitants removed. Returns 'Nothing' if the input was one of the removed inhabitants.
-unshiftN :: (KnownNat n, KnownNat m, n <= m) => Finite m -> Maybe (Finite n)
-unshiftN fx@(Finite x) = result
-    where
-        result = if x < natVal fx - natVal (fromJust result)
-            then Nothing
-            else Just $ Finite $ x - natVal fx + natVal (fromJust result)
+unshiftN :: forall m n. (KnownNat (m - n), n <= m) => Finite m -> Maybe (Finite n)
+unshiftN (Finite x) = if x < natVal (Proxy @(m - n))
+                         then Nothing
+                         else Just $ Finite $ x - natVal (Proxy @(m - n))
 
-weakenProxy :: proxy k -> Finite n -> Finite (n + k)
-weakenProxy _ (Finite x) = Finite x
+addMeansGTE :: forall n k. (n <=? (n + k)) :~: True
+addMeansGTE = unsafeCoerce Refl
+addInvWithAdd :: forall n k. (n + k - n) :~: k
+addInvWithAdd = unsafeCoerce Refl
 
-strengthenProxy :: KnownNat n => proxy k -> Finite (n + k) -> Maybe (Finite n)
-strengthenProxy p (Finite x) = result
-    where
-        result = if x < natVal (fromJust result)
-            then Just $ Finite x
-            else Nothing
+weakenProxy :: forall k n proxy. proxy k -> Finite n -> Finite (n + k)
+weakenProxy _ = case addMeansGTE @n @k of Refl -> weakenN
 
-shiftProxy :: KnownNat k => proxy k -> Finite n -> Finite (n + k)
-shiftProxy p (Finite x) = Finite $ x + natVal p
+strengthenProxy :: forall n k proxy. KnownNat n => proxy k -> Finite (n + k) -> Maybe (Finite n)
+strengthenProxy _ = case addMeansGTE @n @k of Refl -> strengthenN
 
-unshiftProxy :: KnownNat k => proxy k -> Finite (n + k) -> Maybe (Finite n)
-unshiftProxy p (Finite x) = if x < natVal p
-    then Nothing
-    else Just $ Finite $ x - natVal p
+shiftProxy :: forall n k proxy. KnownNat k => proxy k -> Finite n -> Finite (n + k)
+shiftProxy _ = case (addMeansGTE @n @k, addInvWithAdd @n @k) of (Refl, Refl) -> shiftN
+
+unshiftProxy :: forall n k proxy. KnownNat k => proxy k -> Finite (n + k) -> Maybe (Finite n)
+unshiftProxy _ = case (addMeansGTE @n @k, addInvWithAdd @n @k) of (Refl, Refl) -> unshiftN
 
 -- | Add two 'Finite's.
-add :: Finite n -> Finite m -> Finite (n + m)
+add :: forall n m. Finite n -> Finite m -> Finite (n + m - 1)
 add (Finite x) (Finite y) = Finite $ x + y
 
 -- | Subtract two 'Finite's. Returns 'Left' for negative results, and 'Right' for positive results. Note that this function never returns @'Left' 0@.
@@ -147,35 +135,41 @@ sub (Finite x) (Finite y) = if x >= y
     else Left $ Finite $ y - x
 
 -- | Multiply two 'Finite's.
-multiply :: Finite n -> Finite m -> Finite (n * m)
+multiply :: Finite n -> Finite m -> Finite ((n - 1) * (m - 1) + 1)
 multiply (Finite x) (Finite y) = Finite $ x * y
 
-getLeftType :: Either a b -> a
-getLeftType = error "getLeftType"
-
 -- | 'Left'-biased (left values come first) disjoint union of finite sets.
-combineSum :: KnownNat n => Either (Finite n) (Finite m) -> Finite (n + m)
-combineSum (Left (Finite x)) = Finite x
-combineSum efx@(Right (Finite x)) = Finite $ x + natVal (getLeftType efx)
+combineSum :: forall l r. KnownNat l => Either (Finite l) (Finite r) -> Finite (l + r)
+combineSum (Left  (Finite l)) = Finite l
+combineSum (Right (Finite r)) = Finite $ r + natVal (Proxy @l)
 
 -- | 'fst'-biased (fst is the inner, and snd is the outer iteratee) product of finite sets.
-combineProduct :: KnownNat n => (Finite n, Finite m) -> Finite (n * m)
-combineProduct (fx@(Finite x), Finite y) = Finite $ x + y * natVal fx
+combineProduct :: forall l r. KnownNat l => (Finite l, Finite r) -> Finite (l * r)
+combineProduct (Finite l, Finite r) = Finite $ l + r * natVal (Proxy @l)
 
 -- | Take a 'Left'-biased disjoint union apart.
-separateSum :: KnownNat n => Finite (n + m) -> Either (Finite n) (Finite m)
-separateSum (Finite x) = result
-    where
-        result = if x >= natVal (getLeftType result)
-            then Right $ Finite $ x - natVal (getLeftType result)
-            else Left $ Finite x
+separateSum :: forall l r. KnownNat l => Finite (l + r) -> Either (Finite l) (Finite r)
+separateSum (Finite x) = if x >= natVal (Proxy @l)
+                            then Right $ Finite $ x - natVal (Proxy @l)
+                            else Left $ Finite x
 
 -- | Take a 'fst'-biased product apart.
-separateProduct :: KnownNat n => Finite (n * m) -> (Finite n, Finite m)
-separateProduct (Finite x) = result
-    where
-        result = (Finite $ x `mod` natVal (fst result), Finite $ x `div` natVal (fst result))
+separateProduct :: forall l r. KnownNat l => Finite (l * r) -> (Finite l, Finite r)
+separateProduct (Finite x) = (Finite fst, Finite snd)
+  where (fst, snd) = x `quotRem` natVal (Proxy @l)
+
+-- | Witness to the fact that @'Finite' 0@ has no values.
+finite0Absurd :: forall a. Finite 0 -> a
+finite0Absurd f@(Finite _) = error $ "finite0Absurd: impossible; called with " ++ show f
+
+-- | Representation of the unknown type-level number inside a @'Finite' n@
+data FiniteNat n = forall m. (m + 1 <= n, KnownNat m) => FiniteNat (Proxy m)
+-- | Witness to the fact that a @'Finite' n@ contains some number @m@ where @0 <= m < n@.
+finiteNatVal :: forall n. Finite n -> FiniteNat n
+finiteNatVal f@(Finite m) = case someNatVal m of
+                                 Just (SomeNat (p :: Proxy m)) -> case unsafeCoerce Refl :: ((m + 1) <=? n) :~: True of Refl -> FiniteNat p
+                                 Nothing -> error $ "finiteNatVal: impossible negative " ++ show f
 
 -- | Verifies that a given 'Finite' is valid. Should always return 'True' unles you bring the @Data.Finite.Internal.Finite@ constructor into the scope, or use 'Unsafe.Coerce.unsafeCoerce' or other nasty hacks
-isValidFinite :: KnownNat n => Finite n -> Bool
-isValidFinite fx@(Finite x) = x < natVal fx && x >= 0
+isValidFinite :: forall n. KnownNat n => Finite n -> Bool
+isValidFinite (Finite x) = x < natVal (Proxy @n) && x >= 0
