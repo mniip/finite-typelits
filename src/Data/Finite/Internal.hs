@@ -74,7 +74,7 @@ instance KnownNat n => Read (Finite n) where
                  guard (x >= 0 && x < natVal result) 
                  return result
 
--- | Modulo arithmetic. Only the 'fromInteger' function is supposed to be useful.
+-- | Modular arithmetic. Only the 'fromInteger' function is supposed to be useful.
 instance KnownNat n => Num (Finite n) where
     fx@(Finite x) + Finite y = Finite $ (x + y) `mod` natVal fx
     fx@(Finite x) - Finite y = Finite $ (x - y) `mod` natVal fx
@@ -90,6 +90,7 @@ instance KnownNat n => Num (Finite n) where
 instance KnownNat n => Real (Finite n) where
     toRational (Finite x) = x % 1
 
+-- | __Not__ modular arithmetic.
 instance KnownNat n => Integral (Finite n) where
     quotRem (Finite x) (Finite y) = (Finite $ x `quot` y, Finite $ x `rem` y)
     toInteger (Finite x) = x
