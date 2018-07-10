@@ -14,6 +14,7 @@ module Data.Finite
         packFinite, packFiniteProxy,
         finite, finiteProxy,
         getFinite, finites, finitesProxy,
+        modulo, moduloProxy,
         equals, cmp,
         natToFinite,
         weaken, strengthen, shift, unshift,
@@ -56,6 +57,18 @@ finites = results
 -- | Same as 'finites' but with a proxy argument to avoid type signatures.
 finitesProxy :: KnownNat n => proxy n -> [Finite n]
 finitesProxy _ = finites
+
+-- | Produce the 'Finite' that is congruent to the given integer modulo @n@.
+modulo :: KnownNat n => Integer -> Finite n
+modulo x = result
+    where
+        result = if natVal result == 0
+            then error "modulo: division by zero"
+            else Finite (x `mod` natVal result)
+
+-- | Same as 'modulo' but with a proxy argument to avoid type signatures.
+moduloProxy :: KnownNat n => proxy n -> Integer -> Finite n
+moduloProxy _ = modulo
 
 -- | Test two different types of finite numbers for equality.
 equals :: Finite n -> Finite m -> Bool
