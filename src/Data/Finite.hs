@@ -17,6 +17,7 @@ module Data.Finite
         modulo, moduloProxy,
         equals, cmp,
         natToFinite,
+        modClass,
         weaken, strengthen, shift, unshift,
         weakenN, strengthenN, shiftN, unshiftN,
         weakenProxy, strengthenProxy, shiftProxy, unshiftProxy,
@@ -192,3 +193,12 @@ separateProduct (Finite x) = result
 -- | Verifies that a given 'Finite' is valid. Should always return 'True' unles you bring the @Data.Finite.Internal.Finite@ constructor into the scope, or use 'Unsafe.Coerce.unsafeCoerce' or other nasty hacks
 isValidFinite :: KnownNat n => Finite n -> Bool
 isValidFinite fx@(Finite x) = x < natVal fx && x >= 0
+
+-- | Interpret an 'Integral' as a member of a congruency class of @(`mod`
+-- n)@
+--
+-- Essentially 'fromIntegral' precomposed with 'mod'.
+modClass :: (Integral a, KnownNat n) => a -> Finite n
+modClass x = result
+  where
+    result = Finite (fromIntegral x `mod` natVal result)
