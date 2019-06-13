@@ -23,12 +23,14 @@ module Data.Finite
         add, sub, multiply,
         combineSum, combineProduct,
         separateSum, separateProduct,
+        emptyFinite,
         isValidFinite
     )
     where
 
 import Data.Maybe
 import GHC.TypeLits
+import Unsafe.Coerce
 
 import Data.Finite.Internal
 
@@ -189,6 +191,20 @@ separateProduct (Finite x) = result
     where
         result = (Finite $ x `mod` natVal (fst result), Finite $ x `div` natVal (fst result))
 
--- | Verifies that a given 'Finite' is valid. Should always return 'True' unles you bring the @Data.Finite.Internal.Finite@ constructor into the scope, or use 'Unsafe.Coerce.unsafeCoerce' or other nasty hacks
+-- | Verifies that a given 'Finite' is valid. Should always return 'True' unless you bring the @Data.Finite.Internal.Finite@ constructor into the scope, or use 'Unsafe.Coerce.unsafeCoerce' or other nasty hacks
 isValidFinite :: KnownNat n => Finite n -> Bool
 isValidFinite fx@(Finite x) = x < natVal fx && x >= 0
+
+-- | A proof that the empty 'Finite' is uninhabited.
+--
+-- Can be useful in situations where you succesively 'strengthen'
+-- a 'Finite' until you reach a base case of 0, which you can verify is not
+-- inhabitable.
+--
+-- @
+-- case 'strengthen' (0 :: 'Finite' 1) of
+--   Nothing              -> "Too big"
+--   Just (x :: Finite 0) -> emptyFinite x      -- Just will never happen
+-- @
+emptyFinite :: Finite 0 -> a
+emptyFinite = unsafeCoerce  -- use usafeCoerce to get the same _|_ that was used to construct the Finite originally
