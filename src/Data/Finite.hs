@@ -7,7 +7,7 @@
 -- Stability   :  experimental
 -- Portability :  portable
 --------------------------------------------------------------------------------
-{-# LANGUAGE TypeOperators, DataKinds, TypeFamilies, FlexibleContexts #-}
+{-# LANGUAGE TypeOperators, DataKinds, TypeFamilies, FlexibleContexts, BangPatterns #-}
 module Data.Finite
     (
         Finite,
@@ -30,7 +30,6 @@ module Data.Finite
 
 import Data.Maybe
 import GHC.TypeLits
-import Unsafe.Coerce
 
 import Data.Finite.Internal
 
@@ -207,4 +206,4 @@ isValidFinite fx@(Finite x) = x < natVal fx && x >= 0
 --   Just (x :: Finite 0) -> emptyFinite x      -- Just will never happen
 -- @
 emptyFinite :: Finite 0 -> a
-emptyFinite = unsafeCoerce  -- use usafeCoerce to get the same _|_ that was used to construct the Finite originally
+emptyFinite !_ = errorWithoutStackTrace "emptyFinite: Finite 0 is uninhabited"
