@@ -13,6 +13,7 @@ cabal-version:       >=1.10
 
 library
   exposed-modules:     Data.Finite, Data.Finite.Internal
+  other-modules:       Data.Finite.Internal.With
   build-depends:       base >= 4.7
                      , deepseq >= 1.4
   hs-source-dirs:      src

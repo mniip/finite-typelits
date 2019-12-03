@@ -14,6 +14,7 @@ module Data.Finite
         packFinite, packFiniteProxy,
         finite, finiteProxy,
         getFinite, finites, finitesProxy,
+        withFinite,
         modulo, moduloProxy,
         equals, cmp,
         natToFinite,
@@ -31,6 +32,7 @@ import Data.Maybe
 import GHC.TypeLits
 
 import Data.Finite.Internal
+import Data.Finite.Internal.With
 
 -- | Convert an 'Integer' into a 'Finite', returning 'Nothing' if the input is out of bounds.
 packFinite :: KnownNat n => Integer -> Maybe (Finite n)
