@@ -14,6 +14,7 @@ module Data.Finite
         packFinite, packFiniteProxy,
         finite, finiteProxy,
         getFinite, finites, finitesProxy,
+        withFinite,
         modulo, moduloProxy,
         equals, cmp,
         natToFinite,
@@ -27,10 +28,12 @@ module Data.Finite
     )
     where
 
+import Data.Coerce
 import Data.Maybe
 import GHC.TypeLits
 
 import Data.Finite.Internal
+import Data.Finite.Internal.With
 
 -- | Convert an 'Integer' into a 'Finite', returning 'Nothing' if the input is out of bounds.
 packFinite :: KnownNat n => Integer -> Maybe (Finite n)
@@ -52,7 +55,7 @@ finiteProxy _ = finite
 finites :: KnownNat n => [Finite n]
 finites = results
   where
-    results = Finite `fmap` [0 .. (natVal (head results) - 1)]
+    results = coerce [0 .. (natVal (head results) - 1)]
 
 -- | Same as 'finites' but with a proxy argument to avoid type signatures.
 finitesProxy :: KnownNat n => proxy n -> [Finite n]
