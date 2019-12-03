@@ -28,6 +28,7 @@ module Data.Finite
     )
     where
 
+import Data.Coerce
 import Data.Maybe
 import GHC.TypeLits
 
@@ -54,7 +55,7 @@ finiteProxy _ = finite
 finites :: KnownNat n => [Finite n]
 finites = results
   where
-    results = Finite `fmap` [0 .. (natVal (head results) - 1)]
+    results = coerce [0 .. (natVal (head results) - 1)]
 
 -- | Same as 'finites' but with a proxy argument to avoid type signatures.
 finitesProxy :: KnownNat n => proxy n -> [Finite n]
