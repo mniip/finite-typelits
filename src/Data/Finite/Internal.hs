@@ -21,6 +21,7 @@ import GHC.TypeLits
 import GHC.Generics
 import Control.DeepSeq
 import Control.Monad
+import Data.Ix
 import Data.Ratio
 import Text.Read.Lex
 import Text.ParserCombinators.ReadPrec
@@ -30,7 +31,7 @@ import Text.ParserCombinators.ReadPrec
 -- prop> getFinite x < natVal x
 -- prop> getFinite x >= 0
 newtype Finite (n :: Nat) = Finite Integer
-                          deriving (Eq, Ord, Generic)
+                          deriving (Eq, Ord, Generic, Ix)
 
 -- | Convert an 'Integer' into a 'Finite', throwing an error if the input is out of bounds.
 finite :: KnownNat n => Integer -> Finite n
@@ -67,11 +68,11 @@ instance Show (Finite n) where
     showsPrec d (Finite x) = showParen (d > 9) $ showString "finite " . showsPrec 10 x
 
 instance KnownNat n => Read (Finite n) where
-    readPrec = parens $ Text.ParserCombinators.ReadPrec.prec 10 $ do 
+    readPrec = parens $ Text.ParserCombinators.ReadPrec.prec 10 $ do
                  expectP (Ident "finite")
                  x <- readPrec
                  let result = finite x
-                 guard (x >= 0 && x < natVal result) 
+                 guard (x >= 0 && x < natVal result)
                  return result
 
 -- | Modular arithmetic. Only the 'fromInteger' function is supposed to be useful.
