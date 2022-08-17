@@ -9,6 +9,7 @@
 --------------------------------------------------------------------------------
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE DeriveGeneric #-}
+{-# LANGUAGE ExplicitForAll #-}
 {-# LANGUAGE KindSignatures #-}
 module Data.Finite.Internal
     (
@@ -37,7 +38,7 @@ newtype Finite (n :: Nat) = Finite Integer
 
 -- | Convert an 'Integer' into a 'Finite', throwing an error if the input is out
 -- of bounds.
-finite :: KnownNat n => Integer -> Finite n
+finite :: forall n. KnownNat n => Integer -> Finite n
 finite x = result
     where
         result = if x < natVal result && x >= 0
@@ -45,7 +46,7 @@ finite x = result
             else error $ "finite: Integer " ++ show x ++ " is not representable in Finite " ++ show (natVal result)
 
 -- | Convert a 'Finite' into the corresponding 'Integer'.
-getFinite :: Finite n -> Integer
+getFinite :: forall n. Finite n -> Integer
 getFinite (Finite x) = x
 
 -- | Throws an error for @'Finite' 0@

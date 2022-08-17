@@ -1,15 +1,13 @@
+{-# LANGUAGE AllowAmbiguousTypes #-}
+{-# LANGUAGE DataKinds #-}
+{-# LANGUAGE GADTs #-}
+{-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TemplateHaskell #-}
-{-# LANGUAGE TypeOperators #-}
-{-# LANGUAGE TypeFamilies #-}
-{-# LANGUAGE DataKinds #-}
-{-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE TypeApplications #-}
-{-# LANGUAGE UndecidableInstances #-}
-{-# LANGUAGE LambdaCase #-}
-{-# LANGUAGE GADTs #-}
-{-# LANGUAGE AllowAmbiguousTypes #-}
+{-# LANGUAGE TypeFamilies #-}
+{-# LANGUAGE TypeOperators #-}
 module Main where
 
 import Control.Exception
@@ -323,10 +321,10 @@ prop_finites_weakenN = withNat $ \n (_ :: Proxy n) ->
 prop_valid_strengthenN = withNat $ \_ (_ :: Proxy n) ->
     withNatPos $ \_ (_ :: Proxy m) ->
         property $ \x ->
-            maybe True isValidFinite $ strengthenN @n @m x
+            maybe True isValidFinite $ strengthenN @m @n x
 prop_finites_strengthenN = withNat $ \n (_ :: Proxy n) ->
     withNat $ \m (_ :: Proxy m) ->
-        map (strengthenN @m @n) finites === take n (map Just finites) ++ replicate (n - m) Nothing
+        map (strengthenN @n @m) finites === take n (map Just finites) ++ replicate (n - m) Nothing
 
 prop_valid_shiftN = withNatPos $ \n (_ :: Proxy n) ->
     withNatPos $ \m (_ :: Proxy m) ->
@@ -350,41 +348,41 @@ prop_valid_weakenProxy = withNatPos $ \n (_ :: Proxy n) ->
     withNat $ \k (_ :: Proxy k) ->
         unsafeWithKnownNat @(n + k) (n + k) $
             property $ \x ->
-                isValidFinite $ weakenProxy @Proxy @k @n Proxy x
+                isValidFinite $ weakenProxy @n @k Proxy x
 prop_finites_weakenProxy = withNat $ \n (_ :: Proxy n) ->
     withNat $ \k (_ :: Proxy k) ->
         unsafeWithKnownNat @(n + k) (n + k) $
-            map (weakenProxy @Proxy @k @n Proxy) finites === take n finites
+            map (weakenProxy @n @k Proxy) finites === take n finites
 
 prop_valid_strengthenProxy = withNat $ \n (_ :: Proxy n) ->
     withNat $ \k (_ :: Proxy k) ->
         unsafeWithKnownNat @(n + k) (n + k) $
             property $ \x ->
-                maybe True isValidFinite $ strengthenProxy @n @Proxy @k Proxy x
+                maybe True isValidFinite $ strengthenProxy @n @k Proxy x
 prop_finites_strengthenProxy = withNat $ \n (_ :: Proxy n) ->
     withNat $ \k (_ :: Proxy k) ->
         unsafeWithKnownNat @(n + k) (n + k) $
-            map (strengthenProxy @n @Proxy @k Proxy) finites === take n (map Just finites) ++ replicate k Nothing
+            map (strengthenProxy @n @k Proxy) finites === take n (map Just finites) ++ replicate k Nothing
 
 prop_valid_shiftProxy = withNatPos $ \n (_ :: Proxy n) ->
     withNat $ \k (_ :: Proxy k) ->
         unsafeWithKnownNat @(n + k) (n + k) $
             property $ \x ->
-                isValidFinite $ shiftProxy @k @Proxy @n Proxy x
+                isValidFinite $ shiftProxy @n @k Proxy x
 prop_finites_shiftProxy = withNat $ \n (_ :: Proxy n) ->
     withNat $ \k (_ :: Proxy k) ->
         unsafeWithKnownNat @(n + k) (n + k) $
-            map (shiftProxy @k @Proxy @n Proxy) finites === drop k finites
+            map (shiftProxy @n @k Proxy) finites === drop k finites
 
 prop_valid_unshiftProxy = withNat $ \n (_ :: Proxy n) ->
     withNat $ \k (_ :: Proxy k) ->
         unsafeWithKnownNat @(n + k) (n + k) $
             property $ \x ->
-                maybe True isValidFinite $ unshiftProxy @k @Proxy @n Proxy  x
+                maybe True isValidFinite $ unshiftProxy @n @k Proxy  x
 prop_finites_unshiftProxy = withNat $ \n (_ :: Proxy n) ->
     withNat $ \k (_ :: Proxy k) ->
         unsafeWithKnownNat @(n + k) (n + k) $
-            map (unshiftProxy @k @Proxy @n Proxy) finites === replicate k Nothing ++ map Just finites
+            map (unshiftProxy @n @k Proxy) finites === replicate k Nothing ++ map Just finites
 
 prop_strengthen_weaken = withNatPos $ \_ (_ :: Proxy n) ->
     property $ \x ->
@@ -406,7 +404,7 @@ prop_strengthenN_weakenN = withNatPos $ \n (_ :: Proxy n) ->
     withNat $ \m (_ :: Proxy m) ->
         m <= n ==> unsafeWithInequality @m @n @Property $
             property $ \x ->
-                strengthenN @m @n (weakenN x) === Just x
+                strengthenN @n @m (weakenN x) === Just x
 prop_weakenN_strengthenN = withNat $ \n (_ :: Proxy n) ->
     withNat $ \m (_ :: Proxy m) ->
         n <= m ==> unsafeWithInequality @n @m @Property $
@@ -427,22 +425,22 @@ prop_shiftN_unshiftN = withNat $ \n (_ :: Proxy n) ->
 prop_strengthenProxy_weakenProxy = withNatPos $ \_ (_ :: Proxy n) ->
     withNat $ \_ (_ :: Proxy k) ->
         property $ \x ->
-            strengthenProxy @n @Proxy @k Proxy (weakenProxy Proxy x) === Just x
+            strengthenProxy @n @k Proxy (weakenProxy Proxy x) === Just x
 prop_weakenProxy_strengthenProxy = withNat $ \n (_ :: Proxy n) ->
     withNat $ \k (_ :: Proxy k) ->
         unsafeWithKnownNat @(n + k) (n + k) $
             property $ \x ->
-                maybe True (== x) (weakenProxy @Proxy @k @n Proxy <$> strengthenProxy Proxy x)
+                maybe True (== x) (weakenProxy @n @k Proxy <$> strengthenProxy Proxy x)
 
 prop_unshiftProxy_shiftProxy = withNatPos $ \_ (_ :: Proxy n) ->
     withNat $ \_ (_ :: Proxy k) ->
         property $ \x ->
-            unshiftProxy @k @Proxy @n Proxy (shiftProxy Proxy x) === Just x
+            unshiftProxy @n @k Proxy (shiftProxy Proxy x) === Just x
 prop_shiftProxy_unshiftProxy = withNat $ \n (_ :: Proxy n) ->
     withNat $ \k (_ :: Proxy k) ->
         unsafeWithKnownNat @(n + k) (n + k) $
             property $ \x ->
-                maybe True (== x) (shiftProxy @k @Proxy @n Proxy <$> unshiftProxy Proxy x)
+                maybe True (== x) (shiftProxy @n @k Proxy <$> unshiftProxy Proxy x)
 
 prop_valid_add = withNatPos $ \n (_ :: Proxy n) ->
     withNatPos $ \m (_ :: Proxy m) ->
