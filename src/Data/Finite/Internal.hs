@@ -1,13 +1,15 @@
 --------------------------------------------------------------------------------
 -- |
 -- Module      :  Data.Finite.Internal
--- Copyright   :  (C) 2015 mniip
+-- Copyright   :  (C) 2015-2022 mniip
 -- License     :  BSD3
 -- Maintainer  :  mniip <mniip@mniip.com>
 -- Stability   :  experimental
 -- Portability :  portable
 --------------------------------------------------------------------------------
-{-# LANGUAGE KindSignatures, DataKinds, DeriveGeneric #-}
+{-# LANGUAGE DataKinds #-}
+{-# LANGUAGE DeriveGeneric #-}
+{-# LANGUAGE KindSignatures #-}
 module Data.Finite.Internal
     (
         Finite(Finite),
@@ -16,23 +18,25 @@ module Data.Finite.Internal
     )
     where
 
-import GHC.Read
-import GHC.TypeLits
-import GHC.Generics
 import Control.DeepSeq
 import Control.Monad
 import Data.Ratio
-import Text.Read.Lex
+import GHC.Generics
+import GHC.Read
+import GHC.TypeLits
 import Text.ParserCombinators.ReadPrec
+import Text.Read.Lex
 
--- | Finite number type. @'Finite' n@ is inhabited by exactly @n@ values. Invariants:
+-- | Finite number type. @'Finite' n@ is inhabited by exactly @n@ values
+-- the range @[0, n)@ including @0@ but excluding @n@. Invariants:
 --
 -- prop> getFinite x < natVal x
 -- prop> getFinite x >= 0
 newtype Finite (n :: Nat) = Finite Integer
                           deriving (Eq, Ord, Generic)
 
--- | Convert an 'Integer' into a 'Finite', throwing an error if the input is out of bounds.
+-- | Convert an 'Integer' into a 'Finite', throwing an error if the input is out
+-- of bounds.
 finite :: KnownNat n => Integer -> Finite n
 finite x = result
     where
@@ -58,29 +62,38 @@ instance KnownNat n => Bounded (Finite n) where
                 else error "minBound: Finite 0 is uninhabited"
 
 instance KnownNat n => Enum (Finite n) where
+    succ fx@(Finite x) = if x == natVal fx - 1
+        then error "succ: bad argument"
+        else Finite $ succ x
+    pred (Finite x) = if x == 0
+        then error "pred: bad argument"
+        else Finite $ pred x
     fromEnum = fromEnum . getFinite
     toEnum = finite . toEnum
     enumFrom x = enumFromTo x maxBound
+    enumFromTo (Finite x) (Finite y) = Finite `fmap` enumFromTo x y
     enumFromThen x y = enumFromThenTo x y (if x >= y then minBound else maxBound)
+    enumFromThenTo (Finite x) (Finite y) (Finite z) = Finite `fmap` enumFromThenTo x y z
 
 instance Show (Finite n) where
     showsPrec d (Finite x) = showParen (d > 9) $ showString "finite " . showsPrec 10 x
 
 instance KnownNat n => Read (Finite n) where
-    readPrec = parens $ Text.ParserCombinators.ReadPrec.prec 10 $ do 
+    readPrec = parens $ Text.ParserCombinators.ReadPrec.prec 10 $ do
                  expectP (Ident "finite")
                  x <- readPrec
                  let result = finite x
-                 guard (x >= 0 && x < natVal result) 
+                 guard (x >= 0 && x < natVal result)
                  return result
 
--- | Modular arithmetic. Only the 'fromInteger' function is supposed to be useful.
+-- | 'Prelude.+', 'Prelude.-', and 'Prelude.*' implement arithmetic modulo @n@.
+-- The 'fromInteger' function raises an error for inputs outside of bounds.
 instance KnownNat n => Num (Finite n) where
     fx@(Finite x) + Finite y = Finite $ (x + y) `mod` natVal fx
     fx@(Finite x) - Finite y = Finite $ (x - y) `mod` natVal fx
     fx@(Finite x) * Finite y = Finite $ (x * y) `mod` natVal fx
     abs fx = fx
-    signum _ = fromInteger 1
+    signum (Finite x) = fromInteger $ if x == 0 then 0 else 1
     fromInteger x = result
         where
             result = if x < natVal result && x >= 0
@@ -90,7 +103,8 @@ instance KnownNat n => Num (Finite n) where
 instance KnownNat n => Real (Finite n) where
     toRational (Finite x) = x % 1
 
--- | __Not__ modular arithmetic.
+-- | 'quot' and 'rem' are the same as 'div' and 'mod' and they implement regular
+-- division of numbers in the range @[0, n)@, __not__ modular arithmetic.
 instance KnownNat n => Integral (Finite n) where
     quotRem (Finite x) (Finite y) = (Finite $ x `quot` y, Finite $ x `rem` y)
     toInteger (Finite x) = x

@@ -1,13 +1,16 @@
 --------------------------------------------------------------------------------
 -- |
 -- Module      :  Data.Finite
--- Copyright   :  (C) 2015 mniip
+-- Copyright   :  (C) 2015-2022 mniip
 -- License     :  BSD3
 -- Maintainer  :  mniip <mniip@mniip.com>
 -- Stability   :  experimental
 -- Portability :  portable
 --------------------------------------------------------------------------------
-{-# LANGUAGE TypeOperators, DataKinds, TypeFamilies, FlexibleContexts #-}
+{-# LANGUAGE DataKinds #-}
+{-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE TypeFamilies #-}
+{-# LANGUAGE TypeOperators #-}
 module Data.Finite
     (
         Finite,
@@ -32,7 +35,8 @@ import GHC.TypeLits
 
 import Data.Finite.Internal
 
--- | Convert an 'Integer' into a 'Finite', returning 'Nothing' if the input is out of bounds.
+-- | Convert an 'Integer' into a 'Finite', returning 'Nothing' if the input is
+-- out of bounds.
 packFinite :: KnownNat n => Integer -> Maybe (Finite n)
 packFinite x = result
     where
@@ -87,7 +91,8 @@ natToFinite p = Finite $ natVal p
 weaken :: Finite n -> Finite (n + 1)
 weaken (Finite x) = Finite x
 
--- | Remove one inhabitant from the end. Returns 'Nothing' if the input was the removed inhabitant.
+-- | Remove one inhabitant from the end. Returns 'Nothing' if the input was the
+-- removed inhabitant.
 strengthen :: KnownNat n => Finite (n + 1) -> Maybe (Finite n)
 strengthen (Finite x) = result
     where
@@ -99,7 +104,8 @@ strengthen (Finite x) = result
 shift :: Finite n -> Finite (n + 1)
 shift (Finite x) = Finite (x + 1)
 
--- | Remove one inhabitant from the beginning, shifting everything down by one. Returns 'Nothing' if the input was the removed inhabitant.
+-- | Remove one inhabitant from the beginning, shifting everything down by one.
+-- Returns 'Nothing' if the input was the removed inhabitant.
 unshift :: Finite (n + 1) -> Maybe (Finite n)
 unshift (Finite x) = if x < 1
     then Nothing
@@ -109,7 +115,8 @@ unshift (Finite x) = if x < 1
 weakenN :: (n <= m) => Finite n -> Finite m
 weakenN (Finite x) = Finite x
 
--- | Remove multiple inhabitants from the end. Returns 'Nothing' if the input was one of the removed inhabitants.
+-- | Remove multiple inhabitants from the end. Returns 'Nothing' if the input
+-- was one of the removed inhabitants.
 strengthenN :: (KnownNat n, n <= m) => Finite m -> Maybe (Finite n)
 strengthenN (Finite x) = result
     where
@@ -117,13 +124,16 @@ strengthenN (Finite x) = result
             then Just $ Finite x
             else Nothing
 
--- | Add multiple inhabitant in the beginning, shifting everything up by the amount of inhabitants added.
+-- | Add multiple inhabitant in the beginning, shifting everything up by the
+-- amount of inhabitants added.
 shiftN :: (KnownNat n, KnownNat m, n <= m) => Finite n -> Finite m
 shiftN fx@(Finite x) = result
     where
         result = Finite $ x + natVal result - natVal fx
 
--- | Remove multiple inhabitants from the beginning, shifting everything down by the amount of inhabitants removed. Returns 'Nothing' if the input was one of the removed inhabitants.
+-- | Remove multiple inhabitants from the beginning, shifting everything down by
+-- the amount of inhabitants removed. Returns 'Nothing' if the input was one of
+-- the removed inhabitants.
 unshiftN :: (KnownNat n, KnownNat m, n <= m) => Finite m -> Maybe (Finite n)
 unshiftN fx@(Finite x) = result
     where
@@ -135,7 +145,7 @@ weakenProxy :: proxy k -> Finite n -> Finite (n + k)
 weakenProxy _ (Finite x) = Finite x
 
 strengthenProxy :: KnownNat n => proxy k -> Finite (n + k) -> Maybe (Finite n)
-strengthenProxy p (Finite x) = result
+strengthenProxy _ (Finite x) = result
     where
         result = if x < natVal (fromJust result)
             then Just $ Finite x
@@ -153,7 +163,8 @@ unshiftProxy p (Finite x) = if x < natVal p
 add :: Finite n -> Finite m -> Finite (n + m)
 add (Finite x) (Finite y) = Finite $ x + y
 
--- | Subtract two 'Finite's. Returns 'Left' for negative results, and 'Right' for positive results. Note that this function never returns @'Left' 0@.
+-- | Subtract two 'Finite's. Returns 'Left' for negative results, and 'Right'
+-- for positive results. Note that this function never returns @'Left' 0@.
 sub :: Finite n -> Finite m -> Either (Finite m) (Finite n)
 sub (Finite x) (Finite y) = if x >= y
     then Right $ Finite $ x - y
@@ -171,7 +182,8 @@ combineSum :: KnownNat n => Either (Finite n) (Finite m) -> Finite (n + m)
 combineSum (Left (Finite x)) = Finite x
 combineSum efx@(Right (Finite x)) = Finite $ x + natVal (getLeftType efx)
 
--- | 'fst'-biased (fst is the inner, and snd is the outer iteratee) product of finite sets.
+-- | 'fst'-biased (fst is the inner, and snd is the outer iteratee) product of
+-- finite sets.
 combineProduct :: KnownNat n => (Finite n, Finite m) -> Finite (n GHC.TypeLits.* m)
 combineProduct (fx@(Finite x), Finite y) = Finite $ x + y * natVal fx
 
@@ -189,6 +201,8 @@ separateProduct (Finite x) = result
     where
         result = (Finite $ x `mod` natVal (fst result), Finite $ x `div` natVal (fst result))
 
--- | Verifies that a given 'Finite' is valid. Should always return 'True' unles you bring the @Data.Finite.Internal.Finite@ constructor into the scope, or use 'Unsafe.Coerce.unsafeCoerce' or other nasty hacks
+-- | Verifies that a given 'Finite' is valid. Should always return 'True' unless
+-- you bring the @Data.Finite.Internal.Finite@ constructor into the scope, or
+-- use 'Unsafe.Coerce.unsafeCoerce' or other nasty hacks.
 isValidFinite :: KnownNat n => Finite n -> Bool
 isValidFinite fx@(Finite x) = x < natVal fx && x >= 0
