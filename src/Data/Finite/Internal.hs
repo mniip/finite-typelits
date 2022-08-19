@@ -23,6 +23,7 @@ module Data.Finite.Internal
 
 import Control.DeepSeq
 import Control.Monad
+import Data.Ix
 import Data.Proxy
 import Data.Ratio
 import GHC.Read
@@ -36,7 +37,7 @@ import Text.Read.Lex
 -- prop> getFinite x < natVal x
 -- prop> getFinite x >= 0
 newtype Finite (n :: Nat) = Finite Integer
-    deriving (Eq, Ord)
+    deriving (Eq, Ord, Ix)
 
 type role Finite nominal
 
