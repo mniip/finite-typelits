@@ -342,7 +342,7 @@ prop_valid_unshiftN = withNatPos $ \_ (_ :: Proxy n) ->
             maybe True isValidFinite $ unshiftN @n @m x
 prop_finites_unshiftN = withNat $ \n (_ :: Proxy n) ->
     withNat $ \m (_ :: Proxy m) ->
-        map (unshiftN @m @n) finites === replicate (n - m) Nothing ++ drop (m - n) (map Just finites)
+        map (unshiftN @n @m) finites === replicate (n - m) Nothing ++ drop (m - n) (map Just finites)
 
 prop_valid_weakenProxy = withNatPos $ \n (_ :: Proxy n) ->
     withNat $ \k (_ :: Proxy k) ->
@@ -415,7 +415,7 @@ prop_unshiftN_shiftN = withNatPos $ \n (_ :: Proxy n) ->
     withNat $ \m (_ :: Proxy m) ->
         m <= n ==> unsafeWithInequality @m @n @Property $
             property $ \x ->
-                unshiftN @m @n (shiftN x) === Just x
+                unshiftN @n @m (shiftN x) === Just x
 prop_shiftN_unshiftN = withNat $ \n (_ :: Proxy n) ->
     withNat $ \m (_ :: Proxy m) ->
         n <= m ==> unsafeWithInequality @n @m @Property $
