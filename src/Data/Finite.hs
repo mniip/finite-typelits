@@ -117,14 +117,14 @@ weakenN (Finite x) = Finite x
 
 -- | Remove multiple inhabitants from the end. Returns 'Nothing' if the input
 -- was one of the removed inhabitants.
-strengthenN :: (KnownNat n, n <= m) => Finite m -> Maybe (Finite n)
+strengthenN :: KnownNat n => Finite m -> Maybe (Finite n)
 strengthenN (Finite x) = result
     where
         result = if x < natVal (fromJust result)
             then Just $ Finite x
             else Nothing
 
--- | Add multiple inhabitant in the beginning, shifting everything up by the
+-- | Add multiple inhabitants in the beginning, shifting everything up by the
 -- amount of inhabitants added.
 shiftN :: (KnownNat n, KnownNat m, n <= m) => Finite n -> Finite m
 shiftN fx@(Finite x) = result
@@ -134,7 +134,7 @@ shiftN fx@(Finite x) = result
 -- | Remove multiple inhabitants from the beginning, shifting everything down by
 -- the amount of inhabitants removed. Returns 'Nothing' if the input was one of
 -- the removed inhabitants.
-unshiftN :: (KnownNat n, KnownNat m, n <= m) => Finite m -> Maybe (Finite n)
+unshiftN :: (KnownNat n, KnownNat m) => Finite m -> Maybe (Finite n)
 unshiftN fx@(Finite x) = result
     where
         result = if x < natVal fx - natVal (fromJust result)

@@ -320,15 +320,13 @@ prop_finites_weakenN = withNat $ \n (_ :: Proxy n) ->
         n <= m ==> unsafeWithInequality @n @m @Property $
             map (weakenN @n @m) finites === take n finites
 
-prop_valid_strengthenN = withNat $ \n (_ :: Proxy n) ->
-    withNatPos $ \m (_ :: Proxy m) ->
-        n <= m ==> unsafeWithInequality @n @m @Property $
-            property $ \x ->
-                maybe True isValidFinite $ strengthenN @n @m x
+prop_valid_strengthenN = withNat $ \_ (_ :: Proxy n) ->
+    withNatPos $ \_ (_ :: Proxy m) ->
+        property $ \x ->
+            maybe True isValidFinite $ strengthenN @n @m x
 prop_finites_strengthenN = withNat $ \n (_ :: Proxy n) ->
     withNat $ \m (_ :: Proxy m) ->
-        n <= m ==> unsafeWithInequality @m @n @Property $
-            map (strengthenN @m @n) finites === take n (map Just finites) ++ replicate (n - m) Nothing
+        map (strengthenN @m @n) finites === take n (map Just finites) ++ replicate (n - m) Nothing
 
 prop_valid_shiftN = withNatPos $ \n (_ :: Proxy n) ->
     withNatPos $ \m (_ :: Proxy m) ->
@@ -340,15 +338,13 @@ prop_finites_shiftN = withNat $ \n (_ :: Proxy n) ->
         n <= m ==> unsafeWithInequality @n @m @Property $
             map (shiftN @n @m) finites === drop (m - n) finites
 
-prop_valid_unshiftN = withNatPos $ \n (_ :: Proxy n) ->
-    withNat $ \m (_ :: Proxy m) ->
-        n <= m ==> unsafeWithInequality @n @m @Property $
-            property $ \x ->
-                maybe True isValidFinite $ unshiftN @n @m x
+prop_valid_unshiftN = withNatPos $ \_ (_ :: Proxy n) ->
+    withNat $ \_ (_ :: Proxy m) ->
+        property $ \x ->
+            maybe True isValidFinite $ unshiftN @n @m x
 prop_finites_unshiftN = withNat $ \n (_ :: Proxy n) ->
     withNat $ \m (_ :: Proxy m) ->
-        m <= n ==> unsafeWithInequality @m @n @Property $
-            map (unshiftN @m @n) finites === replicate (n - m) Nothing ++ drop (m - n) (map Just finites)
+        map (unshiftN @m @n) finites === replicate (n - m) Nothing ++ drop (m - n) (map Just finites)
 
 prop_valid_weakenProxy = withNatPos $ \n (_ :: Proxy n) ->
     withNat $ \k (_ :: Proxy k) ->
