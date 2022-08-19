@@ -22,7 +22,6 @@ module Data.Finite.Internal
 import Control.DeepSeq
 import Control.Monad
 import Data.Ratio
-import GHC.Generics
 import GHC.Read
 import GHC.TypeLits
 import Text.ParserCombinators.ReadPrec
@@ -34,7 +33,7 @@ import Text.Read.Lex
 -- prop> getFinite x < natVal x
 -- prop> getFinite x >= 0
 newtype Finite (n :: Nat) = Finite Integer
-                          deriving (Eq, Ord, Generic)
+                          deriving (Eq, Ord)
 
 -- | Convert an 'Integer' into a 'Finite', throwing an error if the input is out
 -- of bounds.
@@ -110,4 +109,5 @@ instance KnownNat n => Integral (Finite n) where
     quotRem (Finite x) (Finite y) = (Finite $ x `quot` y, Finite $ x `rem` y)
     toInteger (Finite x) = x
 
-instance NFData (Finite n)
+instance NFData (Finite n) where
+    rnf (Finite x) = rnf x
