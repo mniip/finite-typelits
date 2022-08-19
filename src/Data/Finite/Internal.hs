@@ -20,6 +20,7 @@ module Data.Finite.Internal
 
 import Control.DeepSeq
 import Control.Monad
+import Data.Ix
 import Data.Ratio
 import GHC.Generics
 import GHC.Read
@@ -33,7 +34,7 @@ import Text.Read.Lex
 -- prop> getFinite x < natVal x
 -- prop> getFinite x >= 0
 newtype Finite (n :: Nat) = Finite Integer
-                          deriving (Eq, Ord, Generic)
+                          deriving (Eq, Ord, Generic, Ix)
 
 -- | Convert an 'Integer' into a 'Finite', throwing an error if the input is out
 -- of bounds.
