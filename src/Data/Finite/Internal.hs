@@ -94,9 +94,9 @@ instance KnownNat n => Read (Finite n) where
     readPrec = parens $ Text.ParserCombinators.ReadPrec.prec 10 $ do
                  expectP (Ident "finite")
                  x <- readPrec
-                 let result = finite x
-                 guard (x >= 0 && x < natVal result)
-                 return result
+                 guard (x >= 0 && x < n)
+                 return $ Finite x
+        where n = natVal (Proxy :: Proxy n)
 
 -- | 'Prelude.+', 'Prelude.-', and 'Prelude.*' implement arithmetic modulo @n@.
 -- The 'fromInteger' function raises an error for inputs outside of bounds.
