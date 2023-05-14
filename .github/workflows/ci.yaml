@@ -1,0 +1,56 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - "*"
+  pull_request:
+    branches:
+      - "*"
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        platform:
+          - ubuntu-latest
+        ghc_version:
+          - "8.0.2"
+          - "8.2.2"
+          - "8.4.4"
+          - "8.6.5"
+          - "8.8.4"
+          - "8.10.7"
+          - "9.0.2"
+          - "9.2.7"
+          - "9.4.4"
+          - "9.6.1"
+      fail-fast: false
+    name: Build on Linux, GHC ${{ matrix.ghc_version }}
+    runs-on: ${{ matrix.platform }}
+    steps:
+      - uses: actions/checkout@v3
+      - uses: haskell/actions/setup@v2
+        with:
+          ghc-version: ${{ matrix.ghc_version }}
+          cabal-version: "3.10.1.0"
+
+      - name: cabal sdist
+        run: cabal sdist --output-dir "$GITHUB_WORKSPACE/sdist"
+      - name: unpack
+        run: |
+          mkdir -p "$GITHUB_WORKSPACE/unpacked"
+          find "$GITHUB_WORKSPACE/sdist" -maxdepth 1 -type f -name '*.tar.gz' -exec tar -C "$GITHUB_WORKSPACE/unpacked" -xzvf {} \;
+          echo "PKGDIR_finite_typelits=$(find "$GITHUB_WORKSPACE/unpacked" -maxdepth 1 -type d -regex '.*/finite-typelits-[0-9.]*')" >> "$GITHUB_ENV"
+      - name: cabal configure
+        run: cd "$PKGDIR_finite_typelits" && cabal configure --with-ghc=ghc-${{ matrix.ghc_version }}
+      - name: Install dependencies
+        run: cd "$PKGDIR_finite_typelits" && cabal build --dependencies-only --enable-tests --haddock-all
+      - name: cabal build
+        run: cd "$PKGDIR_finite_typelits" && cabal build --ghc-options=-Werror
+      - name: cabal test spec_test
+        run: cd "$PKGDIR_finite_typelits" && cabal test
+      - name: cabal check
+        run: cd "$PKGDIR_finite_typelits" && cabal check
+      - name: cabal haddock
+        run: cd "$PKGDIR_finite_typelits" && cabal haddock
