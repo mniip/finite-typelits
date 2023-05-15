@@ -1,5 +1,8 @@
 {-# LANGUAGE AllowAmbiguousTypes #-}
+{-# LANGUAGE ConstraintKinds #-}
 {-# LANGUAGE DataKinds #-}
+{-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE RankNTypes #-}
@@ -12,529 +15,877 @@ module Main where
 
 import Control.Exception
 import Control.DeepSeq
+import Data.Bifunctor
+import Data.Int
 import Data.List
 import Data.Maybe
 import Data.Proxy
 import Data.Type.Equality
+import Data.Typeable
+import Data.Word
 import GHC.TypeLits
 import System.Exit
-import Test.QuickCheck
+import Test.QuickCheck hiding (Small(..))
 import Unsafe.Coerce
+import Numeric.Natural
 
-import Data.Finite
-import Data.Finite.Internal
+import Data.Finite.Integral
+import Data.Finite.Internal.Integral
 
-instance KnownNat n => Arbitrary (Finite n) where
+instance Arbitrary Natural where
+    arbitrary = fromInteger . getNonNegative <$> arbitrary
+
+newtype Small a n = Small (Finite a n)
+    deriving (Show)
+
+newtype Big a n = Big (Finite a n)
+    deriving (Show)
+
+newtype Edgy a n = Edgy (Finite a n)
+    deriving (Show)
+
+instance
+    (Arbitrary a, SaneIntegral a, KnownIntegral a n)
+    => Arbitrary (Small a n) where
     arbitrary
-        | natVal @n Proxy == 0 = discard
-        | otherwise = oneof
-            [ pure (Finite 0)
-            , pure (Finite $ natVal @n Proxy - 1)
-            , Finite . (`mod` natVal @n Proxy) <$> arbitrary
+        | intVal @n @a Proxy == 0 = discard
+        | otherwise = Small . Finite . (`mod` n) . getPositive <$> arbitrary
+        where n = intVal @n Proxy
+    shrink (Small (Finite x)) = Small <$> mapMaybe packFinite (shrink x)
+
+instance
+    (Arbitrary a, SaneIntegral a, KnownIntegral a n)
+    => Arbitrary (Big a n) where
+    arbitrary
+        | intVal @n @a Proxy == 0 = discard
+        | otherwise = Big . Finite . ((n - 1) -) . (`mod` n) . getPositive <$> arbitrary
+        where n = intVal @n Proxy
+    shrink (Big (Finite x)) = Big <$> mapMaybe packFinite (shrink x)
+
+instance
+    (Arbitrary a, SaneIntegral a, KnownIntegral a n)
+    => Arbitrary (Edgy a n) where
+    arbitrary
+        | intVal @n @a Proxy == 0 = discard
+        | otherwise = Edgy . Finite <$> oneof
+            [ (`mod` n) <$> arbitrary
+            , ((n - 1) -) . (`mod` n) <$> arbitrary
             ]
-    shrink (Finite x) = mapMaybe packFinite $ shrink x
+        where n = intVal @n Proxy
+    shrink (Edgy (Finite x)) = Edgy <$> mapMaybe packFinite (shrink x)
 
-withNat' :: forall prop. Testable prop => Gen Integer -> (Integer -> [Integer]) -> (forall n. KnownNat n => (forall i. Num i => i) -> Proxy n -> prop) -> Property
-withNat' gen shr prop = forAllShrinkBlind gen shr $ \n -> case someNatVal n of
-    Nothing -> counterexample "withNat" False
-    Just (SomeNat p) -> counterexample ("@" ++ show n) $ prop (fromInteger (natVal p)) p
+data SLimited a where
+    SLimited :: (Limited a n, KnownNat n) => Proxy n -> SLimited a
 
-withNat :: forall prop. Testable prop => (forall n. KnownNat n => (forall i. Num i => i) -> Proxy n -> prop) -> Property
-withNat = withNat' (getNonNegative <$> arbitrary) (map getNonNegative . shrink . NonNegative)
+mkLimited
+    :: forall a lim. (Limit a ~ 'Just lim, KnownNat lim)
+    => Integer -> Maybe (SLimited a)
+mkLimited n = case someNatVal n of
+    Just (SomeNat (p :: Proxy b))
+        | n <= natVal @lim Proxy
+        , Refl :: (b <=? lim) :~: 'True <- unsafeCoerce Refl
+        -> Just $ SLimited p
+    _ -> Nothing
 
-withNatPos :: forall prop. Testable prop => (forall n. KnownNat n => (forall i. Num i => i) -> Proxy n -> prop) -> Property
-withNatPos = withNat' (getPositive <$> arbitrary) (map getPositive . shrink . Positive)
+mkUnlimited
+    :: forall a. Limit a ~ 'Nothing
+    => Integer -> Maybe (SLimited a)
+mkUnlimited n = case someNatVal n of
+    Just (SomeNat p) -> Just $ SLimited p
+    _ -> Nothing
 
-unsafeWithKnownNat :: forall n prop. Testable prop => Integer -> (KnownNat n => prop) -> Property
-unsafeWithKnownNat n prop = case someNatVal n of
-    Nothing -> counterexample "unsafeWithKnownNat: someNatVal" False
-    Just (SomeNat (_ :: Proxy n')) -> case unsafeCoerce Refl :: n :~: n' of
-        Refl -> property prop
+genSmall :: Gen Integer
+genSmall = getNonNegative <$> arbitrary
+
+genOverInt :: Gen Integer
+genOverInt = (toInteger (maxBound @Int) +) <$> genSmall
+
+genOverWord :: Gen Integer
+genOverWord = (toInteger (maxBound @Word) +) <$> genSmall
+
+genUnderInt :: Gen Integer
+genUnderInt = ((toInteger (maxBound @Int) -) <$> genSmall) `suchThat` (>= 0)
+
+genUnderWord :: Gen Integer
+genUnderWord = ((toInteger (maxBound @Word) -) <$> genSmall) `suchThat` (>= 0)
+
+instance Arbitrary (SLimited Integer) where
+    arbitrary = oneof
+        [genSmall, genUnderInt, genOverInt, genUnderWord, genOverWord]
+        `suchThatMap` mkUnlimited
+    shrink (SLimited p) = mapMaybe mkUnlimited $ shrink $ natVal p
+
+instance Arbitrary (SLimited Natural) where
+    arbitrary = oneof
+        [genSmall, genUnderInt, genOverInt, genUnderWord, genOverWord]
+        `suchThatMap` mkUnlimited
+    shrink (SLimited p) = mapMaybe mkUnlimited $ shrink $ natVal p
+
+instance Arbitrary (SLimited Word) where
+    arbitrary = oneof [genSmall, genUnderInt, genOverInt, genUnderWord]
+        `suchThatMap` mkLimited
+    shrink (SLimited p) = mapMaybe mkLimited $ shrink $ natVal p
+
+instance Arbitrary (SLimited Int) where
+    arbitrary = oneof [genSmall, genUnderInt] `suchThatMap` mkLimited
+    shrink (SLimited p) = mapMaybe mkLimited $ shrink $ natVal p
+
+newtype SmallLimited a = SmallLimited { getSmallLimited :: SLimited a }
+
+instance Arbitrary (SmallLimited Integer) where
+    arbitrary = SmallLimited <$> genSmall `suchThatMap` mkUnlimited
+    shrink = map SmallLimited . shrink . getSmallLimited
+
+instance Arbitrary (SmallLimited Natural) where
+    arbitrary = SmallLimited <$> genSmall `suchThatMap` mkUnlimited
+    shrink = map SmallLimited . shrink . getSmallLimited
+
+instance Arbitrary (SmallLimited Word) where
+    arbitrary = SmallLimited <$> genSmall `suchThatMap` mkLimited
+    shrink = map SmallLimited . shrink . getSmallLimited
+
+instance Arbitrary (SmallLimited Int) where
+    arbitrary = SmallLimited <$> genSmall `suchThatMap` mkLimited
+    shrink = map SmallLimited . shrink . getSmallLimited
+
+type Good a =
+    ( Show a
+    , Read a
+    , NFData a
+    , Typeable a
+    , SaneIntegral a
+    , Arbitrary a
+    , Arbitrary (SLimited a)
+    , Arbitrary (SmallLimited a)
+    )
+
+data SType where
+    SType :: Good a => Proxy a -> SType
+
+forType :: forall prop. Testable prop
+    => (forall a. Good a => Proxy a -> prop)
+    -> Property
+forType prop = forAllBlind gen $ \case
+    (name, SType p) -> counterexample @prop ("@" ++ name) $ prop p
+    where
+        gen = elements
+            [ ("Integer", SType @Integer Proxy)
+            , ("Natural", SType @Natural Proxy)
+            , ("Word", SType @Word Proxy)
+            , ("Int", SType @Int Proxy)
+            ]
+
+forLimit'
+    :: forall a. SaneIntegral a
+    => Gen (SLimited a)
+    -> (SLimited a -> [SLimited a])
+    -> (forall n. (KnownIntegral a n, Limited a n)
+        => (forall i. Num i => i) -> Proxy n -> Property)
+    -> Property
+forLimit' gen shr prop = forAllShrinkBlind @Property gen shr $ \case
+    SLimited p -> counterexample ("@" ++ show (natVal p)) $
+        prop (fromInteger $ natVal p) p
+
+forLimit
+    :: forall a. (SaneIntegral a, Arbitrary (SLimited a))
+    => (forall n. (KnownIntegral a n, Limited a n)
+        => (forall i. Num i => i) -> Proxy n -> Property)
+    -> Property
+forLimit = forLimit' @a arbitrary shrink
+
+
+forPositiveLimit
+    :: forall a. (SaneIntegral a, Arbitrary (SLimited a))
+    => (forall n. (KnownIntegral a n, Limited a n)
+        => (forall i. Num i => i) -> Proxy n -> Property)
+    -> Property
+forPositiveLimit = forLimit' @a
+    (arbitrary `suchThat` isPositive)
+    (filter isPositive . shrink)
+    where
+        isPositive :: SLimited a -> Bool
+        isPositive (SLimited p) = natVal p > 0
+
+forSmallLimit
+    :: forall a. (SaneIntegral a, Arbitrary (SmallLimited a))
+    => (forall n. (KnownIntegral a n, Limited a n)
+        => (forall i. Num i => i) -> Proxy n -> Property)
+    -> Property
+forSmallLimit = forLimit' @a
+    (getSmallLimited <$> arbitrary)
+    (map getSmallLimited . shrink . SmallLimited)
+
+unsafeWithKnownIntegral
+    :: forall n a. (SaneIntegral a, Typeable a)
+    => Integer -> ((KnownNat n, Limited a n) => Property) -> Property
+unsafeWithKnownIntegral n prop
+    | Just (Refl :: a :~: Integer) <- cast (Refl @a)
+    , Just (SLimited (_ :: Proxy n')) <- mkUnlimited @a n
+    , Refl <- unsafeCoerce Refl :: n :~: n'
+    = prop
+    | Just (Refl :: a :~: Natural) <- cast (Refl @a)
+    , Just (SLimited (_ :: Proxy n')) <- mkUnlimited @a n
+    , Refl <- unsafeCoerce Refl :: n :~: n'
+    = prop
+    | Just (Refl :: a :~: Word) <- cast (Refl @a)
+    , Just (SLimited (_ :: Proxy n')) <- mkLimited @a n
+    , Refl <- unsafeCoerce Refl :: n :~: n'
+    = prop
+    | Just (Refl :: a :~: Int) <- cast (Refl @a)
+    , Just (SLimited (_ :: Proxy n')) <- mkLimited @a n
+    , Refl <- unsafeCoerce Refl :: n :~: n'
+    = prop
+    | otherwise = discard
 
 newtype IneqCond (n :: Nat) (m :: Nat) = IneqCond ((n <= m) => Property)
-unsafeWithInequality :: forall (n :: Nat) (m :: Nat) prop. Testable prop => ((n <= m) => prop) -> Property
+unsafeWithInequality
+    :: forall (n :: Nat) (m :: Nat). ((n <= m) => Property) -> Property
 unsafeWithInequality prop =
     case unsafeCoerce (IneqCond @n @m $ property prop) :: IneqCond 0 1 of
         IneqCond prop' -> prop'
 
-prop_isvalid_under = withNat $ \_ (_ :: Proxy n) x ->
-    x < 0 ==> expectFailure $ isValidFinite @n (Finite x)
-prop_isvalid_over = withNat $ \n (_ :: Proxy n) x ->
-    x >= n ==> expectFailure $ isValidFinite @n (Finite x)
-
-prop_valid_finite = withNat $ \_ (_ :: Proxy n) x -> ioProperty $
-    evaluate (isValidFinite $ finite @n x)
-        `catch` \(_ :: ErrorCall) -> pure True
-prop_getFinite_finite = withNat $ \_ (_ :: Proxy n) x -> ioProperty $
-    evaluate (getFinite (finite @n x) == x)
-        `catch` \(_ :: ErrorCall) -> pure True
-prop_finite_getFinite = withNatPos $ \_ (_ :: Proxy n) ->
+prop_isvalid_under = forType $ \(_ :: Proxy a) ->
+    forLimit @a $ \_ (_ :: Proxy n) ->
     property $ \x ->
-        finite (getFinite @n x) === x
-
-prop_valid_maxBound = withNat $ \n (_ :: Proxy n) ->
-    n > 0 ==> isValidFinite (maxBound @(Finite n))
-prop_maxBound_max = withNat $ \n (_ :: Proxy n) ->
+    x < 0 ==> not $ isValidFinite @n @a (Finite x)
+prop_isvalid_over = forType $ \(_ :: Proxy a) ->
+    forLimit @a $ \n (_ :: Proxy n) ->
     property $ \x ->
-        n > 0 ==> maxBound @(Finite n) >= x
+    not (x >= n) .||. not (isValidFinite @n @a (Finite x))
 
-prop_valid_minBound = withNat $ \n (_ :: Proxy n) ->
-    n > 0 ==> isValidFinite (minBound @(Finite n))
-prop_minBound_min = withNat $ \n (_ :: Proxy n) ->
-    property $ \x ->
-        n > 0 ==> minBound @(Finite n) <= x
-
-prop_valid_toEnum = withNat $ \_ (_ :: Proxy n) x -> ioProperty $
-    evaluate (isValidFinite $ toEnum @(Finite n) x)
-        `catch` \(_ :: ErrorCall) -> pure True
-prop_fromEnum_toEnum = withNat $ \_ (_ :: Proxy n) x -> ioProperty $
-    evaluate (fromEnum (toEnum @(Finite n) x) == x)
-        `catch` \(_ :: ErrorCall) -> pure True
-prop_toEnum_fromEnum = withNatPos $ \_ (_ :: Proxy n) ->
-    property $ \x ->
-        toEnum @(Finite n) (fromEnum x) == x
-
-prop_valid_enumFrom = withNatPos $ \_ (_ :: Proxy n) ->
-    property $ \x ->
-        all isValidFinite $ enumFrom @(Finite n) x
-prop_getFinite_enumFrom = withNatPos $ \_ (_ :: Proxy n) ->
-    property $ \x ->
-        map getFinite (enumFrom @(Finite n) x)
-            === takeWhile (isJust . packFinite @n) (enumFrom (getFinite x))
-
-prop_valid_enumFromTo = withNatPos $ \_ (_ :: Proxy n) ->
-    property $ \x y ->
-        all isValidFinite $ enumFromTo @(Finite n) x y
-prop_getFinite_enumFromTo = withNatPos $ \_ (_ :: Proxy n) ->
-    property $ \x y ->
-        map getFinite (enumFromTo @(Finite n) x y)
-            === enumFromTo (getFinite x) (getFinite y)
-
-prop_valid_enumFromThen = withNatPos $ \_ (_ :: Proxy n) ->
-    property $ \x y ->
-        x /= y ==> all isValidFinite $ enumFromThen @(Finite n) x y
-prop_getFinite_enumFromThen = withNatPos $ \_ (_ :: Proxy n) ->
-    property $ \x y ->
-        x /= y ==> map getFinite (enumFromThen @(Finite n) x y)
-            === takeWhile (isJust . packFinite @n) (enumFromThen (getFinite x) (getFinite y))
-
-prop_valid_enumFromThenTo = withNatPos $ \_ (_ :: Proxy n) ->
-    property $ \x y z ->
-        x /= y ==> all isValidFinite $ enumFromThenTo @(Finite n) x y z
-prop_getFinite_enumFromThenTo = withNatPos $ \_ (_ :: Proxy n) ->
-    property $ \x y z ->
-        x /= y ==> map getFinite (enumFromThenTo @(Finite n) x y z)
-            === enumFromThenTo (getFinite x) (getFinite y) (getFinite z)
-
-prop_nonint_succ = withNat' genBig shrinkBig $ \_ (_ :: Proxy n) ->
-    forAllShrink genBig shrinkBig $ \x ->
-        case packFinite @n $ succ x of
-            Nothing -> discard
-            Just y -> y === succ (finite x)
-    where
-        big = toInteger (maxBound :: Int)
-        genBig = (big +) . getNonNegative <$> arbitrary
-        shrinkBig = map ((big +) . getNonNegative) . shrink . NonNegative . subtract big
-
-prop_valid_read = withNatPos $ \_ (_ :: Proxy n) ->
-    withNatPos $ \_ (_ :: Proxy m) ->
-        property $ \x -> ioProperty $
-            evaluate (isValidFinite $ read @(Finite n) (show @(Finite m) x))
-                `catch` \(_ :: ErrorCall) -> pure True
-prop_read_show = withNatPos $ \_ (_ :: Proxy n) ->
-    property $ \x ->
-        read (show @(Finite n) x) === x
-
-prop_valid_plus = withNatPos $ \_ (_ :: Proxy n) ->
-    property $ \x y ->
-        isValidFinite @n $ x + y
-prop_getFinite_plus = withNatPos $ \n (_ :: Proxy n) ->
-    property $ \x y ->
-        (getFinite @n (x + y) - (getFinite x + getFinite y)) `mod` n === 0
-
-prop_valid_minus = withNatPos $ \_ (_ :: Proxy n) ->
-    property $ \x y ->
-        isValidFinite @n $ x - y
-prop_getFinite_minus = withNatPos $ \n (_ :: Proxy n) ->
-    property $ \x y ->
-        (getFinite @n (x - y) - (getFinite x - getFinite y)) `mod` n === 0
-
-prop_valid_times = withNatPos $ \_ (_ :: Proxy n) ->
-    property $ \x y ->
-        isValidFinite @n $ x * y
-prop_getFinite_times = withNatPos $ \n (_ :: Proxy n) ->
-    property $ \x y ->
-        (getFinite @n (x * y) - (getFinite x * getFinite y)) `mod` n === 0
-
-prop_valid_negate = withNatPos $ \_ (_ :: Proxy n) ->
-    property $ \x ->
-        isValidFinite @n $ -x
-prop_getFinite_negate = withNatPos $ \n (_ :: Proxy n) ->
-    property $ \x ->
-        (getFinite @n (-x) - (- getFinite x)) `mod` n === 0
-
-prop_valid_abs = withNatPos $ \_ (_ :: Proxy n) ->
-    property $ \x ->
-        isValidFinite @n $ abs x
-prop_getFinite_abs = withNatPos $ \_ (_ :: Proxy n) ->
-    property $ \x ->
-        getFinite @n (abs x) === abs (getFinite x)
-
-prop_valid_signum = withNatPos $ \_ (_ :: Proxy n) ->
+prop_valid_finite = forType $ \(_ :: Proxy a) ->
+    forLimit @a $ \_ (_ :: Proxy n) ->
     property $ \x -> ioProperty $
-        evaluate (isValidFinite @n $ signum x)
-            `catch` \(_ :: ErrorCall) -> pure True
-
-prop_getFinite_signum = withNatPos $ \_ (_ :: Proxy n) ->
+    evaluate (isValidFinite $ finite @n @a x)
+        `catch` \(_ :: ErrorCall) -> pure True
+prop_getFinite_finite = forType $ \(_ :: Proxy a) ->
+    forLimit @a $ \_ (_ :: Proxy n) ->
     property $ \x -> ioProperty $
-        evaluate (getFinite @n (signum x) == signum (getFinite x))
-            `catch` \(_ :: ErrorCall) -> pure True
+    evaluate (getFinite (finite @n @a x) == x)
+        `catch` \(_ :: ErrorCall) -> pure True
+prop_finite_getFinite = forType $ \(_ :: Proxy a) ->
+    forPositiveLimit @a $ \_ (_ :: Proxy n) ->
+    property $ \(Edgy x :: Edgy a n) ->
+    finite (getFinite x) === x
 
-prop_valid_fromInteger = withNatPos $ \_ (_ :: Proxy n) x -> ioProperty $
-    evaluate (isValidFinite $ fromInteger @(Finite n) x)
+prop_valid_maxBound = forType $ \(_ :: Proxy a) ->
+    forLimit @a $ \n (_ :: Proxy n) ->
+    n > 0 ==> isValidFinite (maxBound @(Finite a n))
+prop_maxBound_max = forType $ \(_ :: Proxy a) ->
+    forLimit @a $ \n (_ :: Proxy n) ->
+    property $ \(Edgy x :: Edgy a n) ->
+    n > 0 ==> maxBound >= x
+
+prop_valid_minBound = forType $ \(_ :: Proxy a) ->
+    forLimit @a $ \n (_ :: Proxy n) ->
+    n > 0 ==> isValidFinite (minBound @(Finite a n))
+prop_minBound_min = forType $ \(_ :: Proxy a) ->
+    forLimit @a $ \n (_ :: Proxy n) ->
+    property $ \(Edgy x :: Edgy a n) ->
+    n > 0 ==> minBound <= x
+
+prop_valid_toEnum = forType $ \(_ :: Proxy a) ->
+    forLimit @a $ \_ (_ :: Proxy n) ->
+    property $ \x -> ioProperty $
+    evaluate (isValidFinite $ toEnum @(Finite a n) x)
         `catch` \(_ :: ErrorCall) -> pure True
-prop_toInteger_fromInteger = withNat $ \_ (_ :: Proxy n) x -> ioProperty $
-    evaluate (toInteger (fromInteger @(Finite n) x) == x)
+prop_fromEnum_toEnum = forType $ \(_ :: Proxy a) ->
+    forLimit @a $ \_ (_ :: Proxy n) ->
+    property $ \x -> ioProperty $
+    evaluate (fromEnum (toEnum @(Finite a n) x) == x)
         `catch` \(_ :: ErrorCall) -> pure True
-prop_fromInteger_toInteger = withNatPos $ \_ (_ :: Proxy n) ->
+prop_toEnum_fromEnum = forType $ \(_ :: Proxy a) ->
+    forPositiveLimit @a $ \n (_ :: Proxy n) ->
+    property $ \(Edgy x :: Edgy a n) ->
+    n <= toInteger (maxBound @Int) ==> toEnum (fromEnum x) == x
+
+prop_valid_enumFrom = forType $ \(_ :: Proxy a) ->
+    forPositiveLimit @a $ \_ (_ :: Proxy n) ->
+    property $ \(Big x :: Big a n) ->
+    all isValidFinite [x..]
+prop_getFinite_enumFrom = forType $ \(_ :: Proxy a) ->
+    forPositiveLimit @a $ \n (_ :: Proxy n) ->
+    property $ \(Big x :: Big a n) ->
+    map getFinite [x..]
+        === takeWhile (isJust . packFinite @n @a) [getFinite x..]
+
+prop_valid_enumFromTo = forType $ \(_ :: Proxy a) ->
+    forPositiveLimit @a $ \_ (_ :: Proxy n) ->
+    property $ \(Big x :: Big a n) (Big y) ->
+    all isValidFinite [x..y]
+prop_valid_enumFromTo' = forType $ \(_ :: Proxy a) ->
+    forPositiveLimit @a $ \_ (_ :: Proxy n) ->
+    property $ \(Small x :: Small a n) (Small y) ->
+    all isValidFinite [x..y]
+prop_getFinite_enumFromTo = forType $ \(_ :: Proxy a) ->
+    forPositiveLimit @a $ \_ (_ :: Proxy n) ->
+    property $ \(Big x :: Big a n) (Big y) ->
+    map getFinite [x..y] === [getFinite x..getFinite y]
+prop_getFinite_enumFromTo' = forType $ \(_ :: Proxy a) ->
+    forPositiveLimit @a $ \_ (_ :: Proxy n) ->
+    property $ \(Small x :: Small a n) (Small y) ->
+    map getFinite [x..y] === [getFinite x..getFinite y]
+
+prop_valid_enumFromThen = forType $ \(_ :: Proxy a) ->
+    forPositiveLimit @a $ \_ (_ :: Proxy n) ->
+    property $ \(Big x :: Big a n) (Big y) ->
+    x < y ==> all isValidFinite [x,y..]
+prop_valid_enumFromThen' = forType $ \(_ :: Proxy a) ->
+    forPositiveLimit @a $ \_ (_ :: Proxy n) ->
+    property $ \(Small x :: Small a n) (Small y) ->
+    x > y ==> all isValidFinite [x,y..]
+prop_getFinite_enumFromThen = forType $ \(_ :: Proxy a) ->
+    forPositiveLimit @a $ \_ (_ :: Proxy n) ->
+    property $ \(Big x :: Big a n) (Big y) ->
+    x < y ==> map getFinite [x,y..]
+        === takeWhile (isJust . packFinite @n @a) [getFinite x,getFinite y..]
+prop_getFinite_enumFromThen' = forType $ \(_ :: Proxy a) ->
+    forPositiveLimit @a $ \_ (_ :: Proxy n) ->
+    property $ \(Small x :: Small a n) (Small y) ->
+    x > y ==> map getFinite [x,y..]
+        === takeWhile (isJust . packFinite @n @a) [getFinite x,getFinite y..]
+
+prop_valid_enumFromThenTo = forType $ \(_ :: Proxy a) ->
+    forPositiveLimit @a $ \_ (_ :: Proxy n) ->
+    property $ \(Small x :: Small a n) (Small y) (Small z) ->
+    x /= y ==> all isValidFinite [x,y..z]
+prop_getFinite_enumFromThenTo = forType $ \(_ :: Proxy a) ->
+    forPositiveLimit @a $ \_ (_ :: Proxy n) ->
+    property $ \(Small x :: Small a n) (Small y) (Small z) ->
+    x /= y ==> map getFinite [x,y..z] === [getFinite x,getFinite y..getFinite z]
+
+prop_nonint_succ = forType $ \(_ :: Proxy a) ->
+    forPositiveLimit @a $ \_ (_ :: Proxy n) ->
+    property $ \(Big x :: Big a n) ->
+    case packFinite @n @a $ succ $ getFinite x of
+        Nothing -> discard
+        Just y -> y === succ x
+
+prop_valid_read = forType $ \(_ :: Proxy a) ->
+    forPositiveLimit @a $ \_ (_ :: Proxy n) ->
+    forPositiveLimit @a $ \_ (_ :: Proxy m) ->
+    property $ \(Edgy x :: Edgy a n) -> ioProperty $
+    evaluate (isValidFinite $ read @(Finite a m) (show x))
+        `catch` \(_ :: ErrorCall) -> pure True
+prop_read_show = forType $ \(_ :: Proxy a) ->
+    forPositiveLimit @a $ \_ (_ :: Proxy n) ->
+    property $ \(Edgy x :: Edgy a n) ->
+    read (show x) === x
+
+prop_valid_plus = forType $ \(_ :: Proxy a) ->
+    forPositiveLimit @a $ \_ (_ :: Proxy n) ->
+    property $ \(Edgy x :: Edgy a n) (Edgy y) ->
+    isValidFinite $ x + y
+prop_getFinite_plus = forType $ \(_ :: Proxy a) ->
+    forPositiveLimit @a $ \n (_ :: Proxy n) ->
+    property $ \(Edgy x :: Edgy a n) (Edgy y) ->
+    (getFinite x + getFinite y - getFinite (x + y)) `mod` n === 0
+
+prop_valid_minus = forType $ \(_ :: Proxy a) ->
+    forPositiveLimit @a $ \_ (_ :: Proxy n) ->
+    property $ \(Edgy x :: Edgy a n) (Edgy y) ->
+        isValidFinite $ x - y
+prop_getFinite_minus = forType $ \(_ :: Proxy a) ->
+    forPositiveLimit @a $ \n (_ :: Proxy n) ->
+    property $ \(Edgy x :: Edgy a n) (Edgy y) ->
+    (getFinite x + n - getFinite y - getFinite (x - y)) `mod` n === 0
+
+prop_valid_times = forType $ \(_ :: Proxy a) ->
+    forPositiveLimit @a $ \_ (_ :: Proxy n) ->
+    property $ \(Edgy x :: Edgy a n) (Edgy y) ->
+        isValidFinite $ x * y
+prop_getFinite_times = forType $ \(_ :: Proxy a) ->
+    forPositiveLimit @a $ \n (_ :: Proxy n) ->
+    property $ \(Edgy x :: Edgy a n) (Edgy y) ->
+    (toInteger (getFinite x) * toInteger (getFinite y)
+        - toInteger (getFinite $ x * y)) `mod` n === 0
+
+prop_valid_negate = forType $ \(_ :: Proxy a) ->
+    forPositiveLimit @a $ \_ (_ :: Proxy n) ->
+    property $ \(Edgy x :: Edgy a n) ->
+        isValidFinite $ -x
+prop_getFinite_negate = forType $ \(_ :: Proxy a) ->
+    forPositiveLimit @a $ \n (_ :: Proxy n) ->
+    property $ \(Edgy x :: Edgy a n) ->
+    (n - getFinite x - getFinite (-x)) `mod` n === 0
+
+prop_valid_abs = forType $ \(_ :: Proxy a) ->
+    forPositiveLimit @a $ \_ (_ :: Proxy n) ->
+    property $ \(Edgy x :: Edgy a n) ->
+    isValidFinite $ abs x
+prop_getFinite_abs = forType $ \(_ :: Proxy a) ->
+    forPositiveLimit @a $ \_ (_ :: Proxy n) ->
+    property $ \(Edgy x :: Edgy a n) ->
+    getFinite (abs x) === abs (getFinite x)
+
+prop_valid_signum = forType $ \(_ :: Proxy a) ->
+    forPositiveLimit @a $ \_ (_ :: Proxy n) ->
+    property $ \(Edgy x :: Edgy a n) ->
+    isValidFinite $ signum x
+prop_getFinite_signum = forType $ \(_ :: Proxy a) ->
+    forPositiveLimit @a $ \_ (_ :: Proxy n) ->
+    property $ \(Edgy x :: Edgy a n) ->
+    getFinite (signum x) === signum (getFinite x)
+
+prop_valid_fromInteger = forType $ \(_ :: Proxy a) ->
+    forPositiveLimit @a $ \_ (_ :: Proxy n) ->
+    property $ \x -> ioProperty $
+    evaluate (isValidFinite $ fromInteger @(Finite a n) x)
+        `catch` \(_ :: ErrorCall) -> pure True
+prop_toInteger_fromInteger = forType $ \(_ :: Proxy a) ->
+    forLimit @a $ \_ (_ :: Proxy n) ->
+    property $ \x -> ioProperty $
+    evaluate (toInteger (fromInteger @(Finite a n) x) == x)
+        `catch` \(_ :: ErrorCall) -> pure True
+prop_fromInteger_toInteger = forType $ \(_ :: Proxy a) ->
+    forPositiveLimit @a $ \_ (_ :: Proxy n) ->
+    property $ \(Edgy x :: Edgy a n) ->
+    fromInteger (toInteger x) === x
+
+prop_valid_quot = forType $ \(_ :: Proxy a) ->
+    forPositiveLimit @a $ \_ (_ :: Proxy n) ->
+    property $ \(Edgy x :: Edgy a n) (Edgy y) ->
+    y /= 0 ==> isValidFinite $ x `quot` y
+prop_getFinite_quot = forType $ \(_ :: Proxy a) ->
+    forPositiveLimit @a $ \_ (_ :: Proxy n) ->
+    property $ \(Edgy x :: Edgy a n) (Edgy y) ->
+    y /= 0 ==> getFinite (x `quot` y) === getFinite x `quot` getFinite y
+
+prop_valid_rem = forType $ \(_ :: Proxy a) ->
+    forPositiveLimit @a $ \_ (_ :: Proxy n) ->
+    property $ \(Edgy x :: Edgy a n) (Edgy y) ->
+    y /= 0 ==> isValidFinite $ x `rem` y
+prop_getFinite_rem = forType $ \(_ :: Proxy a) ->
+    forPositiveLimit @a $ \_ (_ :: Proxy n) ->
+    property $ \(Edgy x :: Edgy a n) (Edgy y) ->
+    y /= 0 ==> getFinite (x `rem` y) === getFinite x `rem` getFinite y
+
+prop_valid_div = forType $ \(_ :: Proxy a) ->
+    forPositiveLimit @a $ \_ (_ :: Proxy n) ->
+    property $ \(Edgy x :: Edgy a n) (Edgy y) ->
+    y /= 0 ==> isValidFinite $ x `div` y
+prop_getFinite_div = forType $ \(_ :: Proxy a) ->
+    forPositiveLimit @a $ \_ (_ :: Proxy n) ->
+    property $ \(Edgy x :: Edgy a n) (Edgy y) ->
+    y /= 0 ==> getFinite (x `div` y) === getFinite x `div` getFinite y
+
+prop_valid_mod = forType $ \(_ :: Proxy a) ->
+    forPositiveLimit @a $ \_ (_ :: Proxy n) ->
+    property $ \(Edgy x :: Edgy a n) (Edgy y) ->
+    y /= 0 ==> isValidFinite $ x `mod` y
+prop_getFinite_mod = forType $ \(_ :: Proxy a) ->
+    forPositiveLimit @a $ \_ (_ :: Proxy n) ->
+    property $ \(Edgy x :: Edgy a n) (Edgy y) ->
+    y /= 0 ==> getFinite (x `mod` y) === getFinite x `mod` getFinite y
+
+prop_force = forType $ \(_ :: Proxy a) ->
+    forLimit @a $ \_ (_ :: Proxy n) ->
+    ioProperty $
+    evaluate (rnf @(Finite a n) (error "Expected exception") `seq` False)
+        `catch` (\(_ :: ErrorCall) -> pure True)
+
+prop_valid_packFinite = forType $ \(_ :: Proxy a) ->
+    forLimit @a $ \_ (_ :: Proxy n) ->
     property $ \x ->
-        fromInteger (toInteger @(Finite n) x) === x
-
-prop_valid_quot = withNatPos $ \_ (_ :: Proxy n) ->
-    property $ \x y ->
-        y /= 0 ==> isValidFinite @n $ x `quot` y
-prop_getFinite_quot = withNatPos $ \_ (_ :: Proxy n) ->
-    property $ \x y ->
-        y /= 0 ==> getFinite @n (x `quot` y) === getFinite x `quot` getFinite y
-
-prop_valid_rem = withNatPos $ \_ (_ :: Proxy n) ->
-    property $ \x y ->
-        y /= 0 ==> isValidFinite @n $ x `rem` y
-prop_getFinite_rem = withNatPos $ \_ (_ :: Proxy n) ->
-    property $ \x y ->
-        y /= 0 ==> getFinite @n (x `rem` y) === getFinite x `rem` getFinite y
-
-prop_valid_div = withNatPos $ \_ (_ :: Proxy n) ->
-    property $ \x y ->
-        y /= 0 ==> isValidFinite @n $ x `div` y
-prop_getFinite_div = withNatPos $ \_ (_ :: Proxy n) ->
-    property $ \x y ->
-        y /= 0 ==> getFinite @n (x `div` y) === getFinite x `div` getFinite y
-
-prop_valid_mod = withNatPos $ \_ (_ :: Proxy n) ->
-    property $ \x y ->
-        y /= 0 ==> isValidFinite @n $ x `mod` y
-prop_getFinite_mod = withNatPos $ \_ (_ :: Proxy n) ->
-    property $ \x y ->
-        y /= 0 ==> getFinite @n (x `mod` y) === getFinite x `mod` getFinite y
-
-prop_force = withNat $ \_ (_ :: Proxy n) ->
-    expectFailure $ rnf @(Finite n) (error "Expected exception") `seq` True
-
-prop_valid_packFinite = withNat $ \_ (_ :: Proxy n) x ->
-    maybe True isValidFinite $ packFinite @n x
-prop_getFinite_packFinite = withNat $ \_ (_ :: Proxy n) x ->
-    maybe (property True) ((x ===) . getFinite) $ packFinite @n x
-prop_finite_packFinite = withNat $ \_ (_ :: Proxy n) x -> ioProperty $
-    case packFinite @n x of
-        Nothing -> (evaluate (finite @n x) >> pure False)
+    maybe True isValidFinite $ packFinite @n @a x
+prop_getFinite_packFinite = forType $ \(_ :: Proxy a) ->
+    forLimit @a $ \_ (_ :: Proxy n) ->
+    property $ \x ->
+    maybe (property True) ((x ===) . getFinite) $ packFinite @n @a x
+prop_finite_packFinite = forType $ \(_ :: Proxy a) ->
+    forLimit @a $ \_ (_ :: Proxy n) ->
+    property $ \x -> ioProperty $
+    case packFinite @n @a x of
+        Nothing -> (evaluate (finite @n @a x) >> pure False)
             `catch` \(_ :: ErrorCall) -> pure True
         Just y -> evaluate (y == finite x)
 
-prop_valid_finites = withNat $ \_ (_ :: Proxy n) ->
-    all isValidFinite $ finites @n
-prop_finites_minMax = withNatPos $ \_ (_ :: Proxy n) ->
-    minBound `elem` finites @n .&&. maxBound `elem` finites @n
-prop_finites_ordered = withNat $ \_ (_ :: Proxy n) ->
-    finites @n === sort finites
-prop_finites_all = withNat $ \_ (_ :: Proxy n) ->
+prop_valid_finites = forType $ \(_ :: Proxy a) ->
+    forSmallLimit @a $ \_ (_ :: Proxy n) ->
+    property $
+    all isValidFinite $ finites @n @a
+prop_finites_minMax = forType $ \(_ :: Proxy a) ->
+    forSmallLimit @a $ \n (_ :: Proxy n) ->
+    n > 0 ==> minBound `elem` finites @n @a .&&. maxBound `elem` finites @n @a
+prop_finites_ordered = forType $ \(_ :: Proxy a) ->
+    forSmallLimit @a $ \_ (_ :: Proxy n) ->
+    finites @n @a === sort finites
+prop_finites_all = forType $ \(_ :: Proxy a) ->
+    forSmallLimit @a $ \_ (_ :: Proxy n) ->
+    property $ \(Edgy x :: Edgy a n) ->
+    x -- could be discard
+        `seq` x `elem` finites @n @a
+
+prop_valid_modulo = forType $ \(_ :: Proxy a) ->
+    forPositiveLimit @a $ \_ (_ :: Proxy n) ->
     property $ \x ->
-        x {- could be discard -} `seq` x `elem` finites @n
-
-prop_valid_modulo = withNatPos $ \_ (_ :: Proxy n) x ->
-    isValidFinite $ modulo @n x
-prop_getFinite_modulo = withNatPos $ \n (_ :: Proxy n) x ->
-    (getFinite (modulo @n x) - x) `mod` n === 0
-
-
-prop_getFinite_equals = withNatPos $ \_ (_ :: Proxy n) ->
-    withNatPos $ \_ (_ :: Proxy m) ->
-        property $ \x y ->
-            (x `equals` y) === (getFinite @n x == getFinite @m y)
-
-prop_getFinite_cmp = withNatPos $ \_ (_ :: Proxy n) ->
-    withNatPos $ \_ (_ :: Proxy m) ->
-        property $ \x y ->
-            (x `cmp` y) === (getFinite @n x `compare` getFinite @m y)
-
-prop_valid_natToFinite = withNat $ \n (_ :: Proxy n) ->
-    withNatPos $ \m (_ :: Proxy m) ->
-        n + 1 <= m ==> unsafeWithInequality @(n + 1) @m @Bool $
-            isValidFinite $ natToFinite @n @m Proxy
-prop_getFinite_natToFinite = withNat $ \n (_ :: Proxy n) ->
-    withNatPos $ \m (_ :: Proxy m) ->
-        n + 1 <= m ==> unsafeWithInequality @(n + 1) @m @Property $
-            getFinite (natToFinite @n @m Proxy) === natVal @n Proxy
-
-prop_valid_weaken = withNatPos $ \n (_ :: Proxy n) ->
-    unsafeWithKnownNat @(n + 1) (n + 1) $
-        property $ \x ->
-            isValidFinite $ weaken @n x
-prop_finites_weaken = withNat $ \n (_ :: Proxy n) ->
-    unsafeWithKnownNat @(n + 1) (n + 1) $
-        map (weaken @n) finites === init finites
-
-prop_valid_strengthen = withNat $ \n (_ :: Proxy n) ->
-    unsafeWithKnownNat @(n + 1) (n + 1) $
-        property $ \x ->
-            maybe True isValidFinite $ strengthen @n x
-prop_finites_strengthen = withNat $ \n (_ :: Proxy n) ->
-    unsafeWithKnownNat @(n + 1) (n + 1) $
-        map (strengthen @n) finites === map Just finites ++ [Nothing]
-
-prop_valid_shift = withNatPos $ \n (_ :: Proxy n) ->
-    unsafeWithKnownNat @(n + 1) (n + 1) $
-        property $ \x ->
-            isValidFinite $ shift @n x
-prop_finites_shift = withNat $ \n (_ :: Proxy n) ->
-    unsafeWithKnownNat @(n + 1) (n + 1) $
-        map (shift @n) finites === drop 1 finites
-
-prop_valid_unshift = withNat $ \n (_ :: Proxy n) ->
-    unsafeWithKnownNat @(n + 1) (n + 1) $
-        property $ \x ->
-            maybe True isValidFinite $ unshift @n x
-prop_finites_unshift = withNat $ \n (_ :: Proxy n) ->
-    unsafeWithKnownNat @(n + 1) (n + 1) $
-        map (unshift @n) finites === [Nothing] ++ map Just finites
-
-prop_valid_weakenN = withNatPos $ \n (_ :: Proxy n) ->
-    withNatPos $ \m (_ :: Proxy m) ->
-        n <= m ==> unsafeWithInequality @n @m @Property $
-            property $ \x ->
-                isValidFinite $ weakenN @n @m x
-prop_finites_weakenN = withNat $ \n (_ :: Proxy n) ->
-    withNat $ \m (_ :: Proxy m) ->
-        n <= m ==> unsafeWithInequality @n @m @Property $
-            map (weakenN @n @m) finites === take n finites
-
-prop_valid_strengthenN = withNat $ \_ (_ :: Proxy n) ->
-    withNatPos $ \_ (_ :: Proxy m) ->
-        property $ \x ->
-            maybe True isValidFinite $ strengthenN @m @n x
-prop_finites_strengthenN = withNat $ \n (_ :: Proxy n) ->
-    withNat $ \m (_ :: Proxy m) ->
-        map (strengthenN @n @m) finites === take n (map Just finites) ++ replicate (n - m) Nothing
-
-prop_valid_shiftN = withNatPos $ \n (_ :: Proxy n) ->
-    withNatPos $ \m (_ :: Proxy m) ->
-        n <= m ==> unsafeWithInequality @n @m @Property $
-            property $ \x ->
-                isValidFinite $ shiftN @n @m x
-prop_finites_shiftN = withNat $ \n (_ :: Proxy n) ->
-    withNatPos $ \m (_ :: Proxy m) ->
-        n <= m ==> unsafeWithInequality @n @m @Property $
-            map (shiftN @n @m) finites === drop (m - n) finites
-
-prop_valid_unshiftN = withNatPos $ \_ (_ :: Proxy n) ->
-    withNat $ \_ (_ :: Proxy m) ->
-        property $ \x ->
-            maybe True isValidFinite $ unshiftN @n @m x
-prop_finites_unshiftN = withNat $ \n (_ :: Proxy n) ->
-    withNat $ \m (_ :: Proxy m) ->
-        map (unshiftN @n @m) finites === replicate (n - m) Nothing ++ drop (m - n) (map Just finites)
-
-prop_valid_weakenProxy = withNatPos $ \n (_ :: Proxy n) ->
-    withNat $ \k (_ :: Proxy k) ->
-        unsafeWithKnownNat @(n + k) (n + k) $
-            property $ \x ->
-                isValidFinite $ weakenProxy @n @k Proxy x
-prop_finites_weakenProxy = withNat $ \n (_ :: Proxy n) ->
-    withNat $ \k (_ :: Proxy k) ->
-        unsafeWithKnownNat @(n + k) (n + k) $
-            map (weakenProxy @n @k Proxy) finites === take n finites
-
-prop_valid_strengthenProxy = withNat $ \n (_ :: Proxy n) ->
-    withNat $ \k (_ :: Proxy k) ->
-        unsafeWithKnownNat @(n + k) (n + k) $
-            property $ \x ->
-                maybe True isValidFinite $ strengthenProxy @n @k Proxy x
-prop_finites_strengthenProxy = withNat $ \n (_ :: Proxy n) ->
-    withNat $ \k (_ :: Proxy k) ->
-        unsafeWithKnownNat @(n + k) (n + k) $
-            map (strengthenProxy @n @k Proxy) finites === take n (map Just finites) ++ replicate k Nothing
-
-prop_valid_shiftProxy = withNatPos $ \n (_ :: Proxy n) ->
-    withNat $ \k (_ :: Proxy k) ->
-        unsafeWithKnownNat @(n + k) (n + k) $
-            property $ \x ->
-                isValidFinite $ shiftProxy @n @k Proxy x
-prop_finites_shiftProxy = withNat $ \n (_ :: Proxy n) ->
-    withNat $ \k (_ :: Proxy k) ->
-        unsafeWithKnownNat @(n + k) (n + k) $
-            map (shiftProxy @n @k Proxy) finites === drop k finites
-
-prop_valid_unshiftProxy = withNat $ \n (_ :: Proxy n) ->
-    withNat $ \k (_ :: Proxy k) ->
-        unsafeWithKnownNat @(n + k) (n + k) $
-            property $ \x ->
-                maybe True isValidFinite $ unshiftProxy @n @k Proxy  x
-prop_finites_unshiftProxy = withNat $ \n (_ :: Proxy n) ->
-    withNat $ \k (_ :: Proxy k) ->
-        unsafeWithKnownNat @(n + k) (n + k) $
-            map (unshiftProxy @n @k Proxy) finites === replicate k Nothing ++ map Just finites
-
-prop_strengthen_weaken = withNatPos $ \_ (_ :: Proxy n) ->
+    isValidFinite $ modulo @n @a x
+prop_getFinite_modulo = forType $ \(_ :: Proxy a) ->
+    forPositiveLimit @a $ \n (_ :: Proxy n) ->
     property $ \x ->
-        strengthen @n (weaken x) === Just x
-prop_weaken_strengthen = withNat $ \n (_ :: Proxy n) ->
-    unsafeWithKnownNat @(n + 1) (n + 1) $
-        property $ \x ->
-            maybe True (== x) (weaken @n <$> strengthen x)
+    (toInteger x - toInteger (getFinite $ modulo @n @a x)) `mod` n === 0
 
-prop_unshift_shift = withNatPos $ \_ (_ :: Proxy n) ->
-    property $ \x ->
-        unshift @n (shift x) === Just x
-prop_shift_unshift = withNat $ \n (_ :: Proxy n) ->
-    unsafeWithKnownNat @(n + 1) (n + 1) $
-        property $ \x ->
-            maybe True (== x) (shift @n <$> unshift x)
+prop_getFinite_equals = forType $ \(_ :: Proxy a) ->
+    forPositiveLimit @a $ \_ (_ :: Proxy n) ->
+    forPositiveLimit @a $ \_ (_ :: Proxy m) ->
+    property $ \(Edgy x :: Edgy a n) (Edgy y :: Edgy a m) ->
+    (x `equals` y) === (getFinite x == getFinite y)
 
-prop_strengthenN_weakenN = withNatPos $ \n (_ :: Proxy n) ->
-    withNat $ \m (_ :: Proxy m) ->
-        m <= n ==> unsafeWithInequality @m @n @Property $
-            property $ \x ->
-                strengthenN @n @m (weakenN x) === Just x
-prop_weakenN_strengthenN = withNat $ \n (_ :: Proxy n) ->
-    withNat $ \m (_ :: Proxy m) ->
-        n <= m ==> unsafeWithInequality @n @m @Property $
-            property $ \x ->
-                maybe True (== x) (weakenN @n @m <$> strengthenN x)
+prop_getFinite_cmp = forType $ \(_ :: Proxy a) ->
+    forPositiveLimit @a $ \_ (_ :: Proxy n) ->
+    forPositiveLimit @a $ \_ (_ :: Proxy m) ->
+    property $ \(Edgy x :: Edgy a n) (Edgy y :: Edgy a m) ->
+    (x `cmp` y) === (getFinite x `compare` getFinite y)
 
-prop_unshiftN_shiftN = withNatPos $ \n (_ :: Proxy n) ->
-    withNat $ \m (_ :: Proxy m) ->
-        m <= n ==> unsafeWithInequality @m @n @Property $
-            property $ \x ->
-                unshiftN @n @m (shiftN x) === Just x
-prop_shiftN_unshiftN = withNat $ \n (_ :: Proxy n) ->
-    withNat $ \m (_ :: Proxy m) ->
-        n <= m ==> unsafeWithInequality @n @m @Property $
-            property $ \x ->
-                maybe True (== x) (shiftN @n @m <$> unshiftN x)
+prop_valid_natToFinite = forType $ \(_ :: Proxy a) ->
+    forLimit @a $ \n (_ :: Proxy n) ->
+    forPositiveLimit @a $ \m (_ :: Proxy m) ->
+    n + 1 <= m ==> unsafeWithInequality @(n + 1) @m $
+    property $
+    isValidFinite $ natToFinite @n @m @a Proxy
+prop_getFinite_natToFinite = forType $ \(_ :: Proxy a) ->
+    forLimit @a $ \n (_ :: Proxy n) ->
+    forPositiveLimit @a $ \m (_ :: Proxy m) ->
+    n + 1 <= m ==> unsafeWithInequality @(n + 1) @m $
+    getFinite (natToFinite @n @m @a Proxy) === n
 
-prop_strengthenProxy_weakenProxy = withNatPos $ \_ (_ :: Proxy n) ->
-    withNat $ \_ (_ :: Proxy k) ->
-        property $ \x ->
-            strengthenProxy @n @k Proxy (weakenProxy Proxy x) === Just x
-prop_weakenProxy_strengthenProxy = withNat $ \n (_ :: Proxy n) ->
-    withNat $ \k (_ :: Proxy k) ->
-        unsafeWithKnownNat @(n + k) (n + k) $
-            property $ \x ->
-                maybe True (== x) (weakenProxy @n @k Proxy <$> strengthenProxy Proxy x)
+prop_valid_weaken = forType $ \(_ :: Proxy a) ->
+    forPositiveLimit @a $ \n (_ :: Proxy n) ->
+    unsafeWithKnownIntegral @(n + 1) @a (n + 1) $
+    property $ \(Edgy x :: Edgy a n) ->
+    isValidFinite $ weaken x
+prop_finites_weaken = forType $ \(_ :: Proxy a) ->
+    forSmallLimit @a $ \n (_ :: Proxy n) ->
+    unsafeWithKnownIntegral @(n + 1) @a (n + 1) $
+    map (weaken @n @a) finites === init finites
 
-prop_unshiftProxy_shiftProxy = withNatPos $ \_ (_ :: Proxy n) ->
-    withNat $ \_ (_ :: Proxy k) ->
-        property $ \x ->
-            unshiftProxy @n @k Proxy (shiftProxy Proxy x) === Just x
-prop_shiftProxy_unshiftProxy = withNat $ \n (_ :: Proxy n) ->
-    withNat $ \k (_ :: Proxy k) ->
-        unsafeWithKnownNat @(n + k) (n + k) $
-            property $ \x ->
-                maybe True (== x) (shiftProxy @n @k Proxy <$> unshiftProxy Proxy x)
+prop_valid_strengthen = forType $ \(_ :: Proxy a) ->
+    forLimit @a $ \n (_ :: Proxy n) ->
+    unsafeWithKnownIntegral @(n + 1) @a (n + 1) $
+    property $ \(Edgy x :: Edgy a (n + 1)) ->
+    maybe True isValidFinite $ strengthen x
+prop_finites_strengthen = forType $ \(_ :: Proxy a) ->
+    forSmallLimit @a $ \n (_ :: Proxy n) ->
+    unsafeWithKnownIntegral @(n + 1) @a (n + 1) $
+    map (strengthen @n @a) finites === map Just finites ++ [Nothing]
 
-prop_valid_add = withNatPos $ \n (_ :: Proxy n) ->
-    withNatPos $ \m (_ :: Proxy m) ->
-        unsafeWithKnownNat @(n + m) (n + m) $
-            property $ \x y ->
-                isValidFinite $ add @n @m x y
-prop_getFinite_add = withNatPos $ \_ (_ :: Proxy n) ->
-    withNatPos $ \_ (_ :: Proxy m) ->
-        property $ \x y ->
-            getFinite (add @n @m x y) === getFinite x + getFinite y
+prop_valid_shift = forType $ \(_ :: Proxy a) ->
+    forPositiveLimit @a $ \n (_ :: Proxy n) ->
+    unsafeWithKnownIntegral @(n + 1) @a (n + 1) $
+    property $ \(Edgy x :: Edgy a n) ->
+    isValidFinite $ shift x
+prop_finites_shift = forType $ \(_ :: Proxy a) ->
+    forSmallLimit @a $ \n (_ :: Proxy n) ->
+    unsafeWithKnownIntegral @(n + 1) @a (n + 1) $
+    map (shift @n @a) finites === drop 1 finites
 
-prop_valid_sub = withNatPos $ \_ (_ :: Proxy n) ->
-    withNatPos $ \_ (_ :: Proxy m) ->
-        property $ \x y ->
-            either isValidFinite isValidFinite $ sub @n @m x y
-prop_getFinite_sub = withNatPos $ \_ (_ :: Proxy n) ->
-    withNatPos $ \_ (_ :: Proxy m) ->
-        property $ \x y ->
-            either (negate . getFinite) getFinite (sub @n @m x y) === getFinite x - getFinite y
-prop_sub_Left_0 = withNatPos $ \_ (_ :: Proxy n) ->
-    withNatPos $ \_ (_ :: Proxy m) ->
-        property $ \x y ->
-            sub @n @m x y =/= Left 0
+prop_valid_unshift = forType $ \(_ :: Proxy a) ->
+    forLimit @a $ \n (_ :: Proxy n) ->
+    unsafeWithKnownIntegral @(n + 1) @a (n + 1) $
+    property $ \(Edgy x :: Edgy a (n + 1)) ->
+    maybe True isValidFinite $ unshift x
+prop_finites_unshift = forType $ \(_ :: Proxy a) ->
+    forSmallLimit @a $ \n (_ :: Proxy n) ->
+    unsafeWithKnownIntegral @(n + 1) @a (n + 1) $
+    map (unshift @n @a) finites === [Nothing] ++ map Just finites
 
-prop_valid_multiply = withNatPos $ \n (_ :: Proxy n) ->
-    withNatPos $ \m (_ :: Proxy m) ->
-        unsafeWithKnownNat @(n GHC.TypeLits.* m) (n * m) $
-            property $ \x y ->
-                isValidFinite $ multiply @n @m x y
-prop_getFinite_multiply = withNatPos $ \_ (_ :: Proxy n) ->
-    withNatPos $ \_ (_ :: Proxy m) ->
-        property $ \x y ->
-            getFinite (multiply @n @m x y) === getFinite x * getFinite y
+prop_valid_weakenN = forType $ \(_ :: Proxy a) ->
+    forPositiveLimit @a $ \n (_ :: Proxy n) ->
+    forPositiveLimit @a $ \m (_ :: Proxy m) ->
+    n <= m ==> unsafeWithInequality @n @m $
+    property $ \(Edgy x :: Edgy a n) ->
+    isValidFinite $ weakenN @n @m @a x
+prop_finites_weakenN = forType $ \(_ :: Proxy a) ->
+    forSmallLimit @a $ \n (_ :: Proxy n) ->
+    forSmallLimit @a $ \m (_ :: Proxy m) ->
+    n <= m ==> unsafeWithInequality @n @m $
+    map (weakenN @n @m @a) finites === take n finites
 
-prop_valid_combineSum = withNat $ \n (_ :: Proxy n) ->
-    withNat $ \m (_ :: Proxy m) ->
-        unsafeWithKnownNat @(n + m) (n + m) $
-            property $ \x ->
-                isValidFinite $ combineSum @n @m x
-prop_finites_combineSum = withNat $ \n (_ :: Proxy n) ->
-    withNat $ \m (_ :: Proxy m) ->
-        unsafeWithKnownNat @(n + m) (n + m) $
-            map (combineSum @n @m) (map Left finites ++ map Right finites) === finites
+prop_valid_strengthenN = forType $ \(_ :: Proxy a) ->
+    forPositiveLimit @a $ \_ (_ :: Proxy n) ->
+    forLimit @a $ \_ (_ :: Proxy m) ->
+    property $ \(Edgy x :: Edgy a n) ->
+    maybe True isValidFinite $ strengthenN @n @m x
+prop_finites_strengthenN = forType $ \(_ :: Proxy a) ->
+    forSmallLimit @a $ \n (_ :: Proxy n) ->
+    forSmallLimit @a $ \m (_ :: Proxy m) ->
+    map (strengthenN @n @m @a) finites
+        === take n (map Just finites) ++ replicate (n - m) Nothing
 
-prop_valid_combineProduct = withNat $ \n (_ :: Proxy n) ->
-    withNat $ \m (_ :: Proxy m) ->
-        unsafeWithKnownNat @(n GHC.TypeLits.* m) (n * m) $
-            property $ \x ->
-                isValidFinite (combineProduct @n @m x)
-prop_finites_combineProduct = withNat $ \n (_ :: Proxy n) ->
-    withNat $ \m (_ :: Proxy m) ->
-        unsafeWithKnownNat @(n GHC.TypeLits.* m) (n * m) $
-            map (combineProduct @n @m) [(x, y) | y <- finites, x <- finites] === finites
+prop_valid_shiftN = forType $ \(_ :: Proxy a) ->
+    forPositiveLimit @a $ \n (_ :: Proxy n) ->
+    forPositiveLimit @a $ \m (_ :: Proxy m) ->
+    n <= m ==> unsafeWithInequality @n @m $
+    property $ \(Edgy x :: Edgy a n) ->
+    isValidFinite $ shiftN @n @m @a x
+prop_finites_shiftN = forType $ \(_ :: Proxy a) ->
+    forSmallLimit @a $ \n (_ :: Proxy n) ->
+    forSmallLimit @a $ \m (_ :: Proxy m) ->
+    n <= m ==> unsafeWithInequality @n @m $
+    map (shiftN @n @m @a) finites === drop (m - n) finites
 
-prop_valid_separateSum = withNat $ \n (_ :: Proxy n) ->
-    withNat $ \m (_ :: Proxy m) ->
-        unsafeWithKnownNat @(n + m) (n + m) $
-            property $ \x ->
-                either isValidFinite isValidFinite $ separateSum @n @m x
-prop_finites_separateSum = withNat $ \n (_ :: Proxy n) ->
-    withNat $ \m (_ :: Proxy m) ->
-        unsafeWithKnownNat @(n + m) (n + m) $
-            map (separateSum @n @m) finites === map Left finites ++ map Right finites
+prop_valid_unshiftN = forType $ \(_ :: Proxy a) ->
+    forPositiveLimit @a $ \_ (_ :: Proxy n) ->
+    forLimit @a $ \_ (_ :: Proxy m) ->
+    property $ \(Edgy x :: Edgy a n) ->
+    maybe True isValidFinite $ unshiftN @n @m x
+prop_finites_unshiftN = forType $ \(_ :: Proxy a) ->
+    forSmallLimit @a $ \n (_ :: Proxy n) ->
+    forSmallLimit @a $ \m (_ :: Proxy m) ->
+    map (unshiftN @n @m @a) finites
+        === replicate (n - m) Nothing ++ drop (m - n) (map Just finites)
 
-prop_valid_separateProduct = withNat $ \n (_ :: Proxy n) ->
-    withNat $ \m (_ :: Proxy m) ->
-        unsafeWithKnownNat @(n GHC.TypeLits.* m) (n * m) $
-            property $ \x ->
-                x {- could be discard -} `seq` isValidFinite (fst $ separateProduct @n @m x)
-                    .&&. isValidFinite (snd $ separateProduct @n @m x)
-prop_finites_separateProduct = withNat $ \n (_ :: Proxy n) ->
-    withNat $ \m (_ :: Proxy m) ->
-        unsafeWithKnownNat @(n GHC.TypeLits.* m) (n * m) $
-            map (separateProduct @n @m) finites === [(x, y) | y <- finites, x <- finites]
+prop_valid_weakenProxy = forType $ \(_ :: Proxy a) ->
+    forLimit @a $ \n (_ :: Proxy n) ->
+    forLimit @a $ \k (_ :: Proxy k) ->
+    unsafeWithKnownIntegral @(n + k) @a (n + k) $
+    property $ \(Edgy x :: Edgy a n) ->
+    isValidFinite $ weakenProxy @n @k Proxy x
+prop_finites_weakenProxy = forType $ \(_ :: Proxy a) ->
+    forSmallLimit @a $ \n (_ :: Proxy n) ->
+    forSmallLimit @a $ \k (_ :: Proxy k) ->
+    unsafeWithKnownIntegral @(n + k) @a (n + k) $
+    map (weakenProxy @n @k @a Proxy) finites === take n finites
 
-prop_combineSum_separateSum = withNat $ \n (_ :: Proxy n) ->
-    withNat $ \m (_ :: Proxy m) ->
-        unsafeWithKnownNat @(n + m) (n + m) $
-            property $ \x ->
-                combineSum @n @m (separateSum x) === x
-prop_separateSum_combineSum = withNat $ \_ (_ :: Proxy n) ->
-    withNat $ \_ (_ :: Proxy m) ->
-        property $ \x ->
-            separateSum @n @m (combineSum x) === x
+prop_valid_strengthenProxy = forType $ \(_ :: Proxy a) ->
+    forLimit @a $ \n (_ :: Proxy n) ->
+    forLimit @a $ \k (_ :: Proxy k) ->
+    unsafeWithKnownIntegral @(n + k) @a (n + k) $
+    property $ \(Edgy x :: Edgy a (n + k)) ->
+    maybe True isValidFinite $ strengthenProxy @n @k Proxy x
+prop_finites_strengthenProxy = forType $ \(_ :: Proxy a) ->
+    forSmallLimit @a $ \n (_ :: Proxy n) ->
+    forSmallLimit @a $ \k (_ :: Proxy k) ->
+    unsafeWithKnownIntegral @(n + k) @a (n + k) $
+    map (strengthenProxy @n @k @a Proxy) finites
+        === take n (map Just finites) ++ replicate k Nothing
 
-prop_combineProduct_separateProduct = withNat $ \n (_ :: Proxy n) ->
-    withNat $ \m (_ :: Proxy m) ->
-        unsafeWithKnownNat @(n GHC.TypeLits.* m) (n * m) $
-            property $ \x ->
-                x {- could be discard -} `seq` combineProduct @n @m (separateProduct x) === x
-prop_separateProduct_combineProduct = withNat $ \_ (_ :: Proxy n) ->
-    withNat $ \_ (_ :: Proxy m) ->
-        property $ \x ->
-            force x {- could be discard -} `seq` separateProduct @n @m (combineProduct x) === x
+prop_valid_shiftProxy = forType $ \(_ :: Proxy a) ->
+    forPositiveLimit @a $ \n (_ :: Proxy n) ->
+    forLimit @a $ \k (_ :: Proxy k) ->
+    unsafeWithKnownIntegral @(n + k) @a (n + k) $
+    property $ \(Edgy x :: Edgy a n) ->
+    isValidFinite $ shiftProxy @n @k Proxy x
+prop_finites_shiftProxy = forType $ \(_ :: Proxy a) ->
+    forSmallLimit @a $ \n (_ :: Proxy n) ->
+    forSmallLimit @a $ \k (_ :: Proxy k) ->
+    unsafeWithKnownIntegral @(n + k) @a (n + k) $
+    map (shiftProxy @n @k @a Proxy) finites === drop k finites
+
+prop_valid_unshiftProxy = forType $ \(_ :: Proxy a) ->
+    forLimit @a $ \n (_ :: Proxy n) ->
+    forLimit @a $ \k (_ :: Proxy k) ->
+    unsafeWithKnownIntegral @(n + k) @a (n + k) $
+    property $ \(Edgy x :: Edgy a (n + k)) ->
+    maybe True isValidFinite $ unshiftProxy @n @k Proxy x
+prop_finites_unshiftProxy = forType $ \(_ :: Proxy a) ->
+    forSmallLimit @a $ \n (_ :: Proxy n) ->
+    forSmallLimit @a $ \k (_ :: Proxy k) ->
+    unsafeWithKnownIntegral @(n + k) @a (n + k) $
+    map (unshiftProxy @n @k @a Proxy) finites
+        === replicate k Nothing ++ map Just finites
+
+prop_strengthen_weaken = forType $ \(_ :: Proxy a) ->
+    forPositiveLimit @a $ \n (_ :: Proxy n) ->
+    property $ \(Edgy x :: Edgy a n) ->
+    unsafeWithKnownIntegral @(n + 1) @a (n + 1) $
+    strengthen (weaken x) === Just x
+prop_weaken_strengthen = forType $ \(_ :: Proxy a) ->
+    forLimit @a $ \n (_ :: Proxy n) ->
+    unsafeWithKnownIntegral @(n + 1) @a (n + 1) $
+    property $ \(Edgy x :: Edgy a (n + 1)) ->
+    maybe True (== x) (weaken <$> strengthen x)
+
+prop_unshift_shift = forType $ \(_ :: Proxy a) ->
+    forPositiveLimit @a $ \n (_ :: Proxy n) ->
+    property $ \(Edgy x :: Edgy a n) ->
+    unsafeWithKnownIntegral @(n + 1) @a (n + 1) $
+    unshift (shift x) === Just x
+prop_shift_unshift = forType $ \(_ :: Proxy a) ->
+    forLimit @a $ \n (_ :: Proxy n) ->
+    unsafeWithKnownIntegral @(n + 1) @a (n + 1) $
+    property $ \(Edgy x :: Edgy a (n + 1)) ->
+    maybe True (== x) (shift <$> unshift x)
+
+prop_strengthenN_weakenN = forType $ \(_ :: Proxy a) ->
+    forPositiveLimit @a $ \n (_ :: Proxy n) ->
+    forPositiveLimit @a $ \m (_ :: Proxy m) ->
+    n <= m ==> unsafeWithInequality @n @m $
+    property $ \(Edgy x :: Edgy a n) ->
+    strengthenN (weakenN @n @m x) === Just x
+prop_weakenN_strengthenN = forType $ \(_ :: Proxy a) ->
+    forPositiveLimit @a $ \n (_ :: Proxy n) ->
+    forLimit @a $ \m (_ :: Proxy m) ->
+    m <= n ==> unsafeWithInequality @m @n $
+    property $ \(Edgy x :: Edgy a n) ->
+    maybe True (== x) (weakenN <$> strengthenN @n @m x)
+
+prop_unshiftN_shiftN = forType $ \(_ :: Proxy a) ->
+    forPositiveLimit @a $ \n (_ :: Proxy n) ->
+    forPositiveLimit @a $ \m (_ :: Proxy m) ->
+    n <= m ==> unsafeWithInequality @n @m $
+    property $ \(Edgy x :: Edgy a n) ->
+    unshiftN (shiftN @n @m x) === Just x
+prop_shiftN_unshiftN = forType $ \(_ :: Proxy a) ->
+    forPositiveLimit @a $ \n (_ :: Proxy n) ->
+    forLimit @a $ \m (_ :: Proxy m) ->
+    m <= n ==> unsafeWithInequality @m @n $
+    property $ \(Edgy x :: Edgy a n) ->
+    maybe True (== x) (shiftN <$> unshiftN @n @m x)
+
+prop_strengthenProxy_weakenProxy = forType $ \(_ :: Proxy a) ->
+    forPositiveLimit @a $ \n (_ :: Proxy n) ->
+    forLimit @a $ \k (_ :: Proxy k) ->
+    property $ \(Edgy x :: Edgy a n) ->
+    unsafeWithKnownIntegral @(n + k) @a (n + k) $
+    strengthenProxy Proxy (weakenProxy @n @k Proxy x) === Just x
+prop_weakenProxy_strengthenProxy = forType $ \(_ :: Proxy a) ->
+    forLimit @a $ \n (_ :: Proxy n) ->
+    forLimit @a $ \k (_ :: Proxy k) ->
+    unsafeWithKnownIntegral @(n + k) @a (n + k) $
+    property $ \(Edgy x :: Edgy a (n + k)) ->
+    maybe True (== x) (weakenProxy Proxy <$> strengthenProxy @n @k Proxy x)
+
+prop_unshiftProxy_shiftProxy = forType $ \(_ :: Proxy a) ->
+    forPositiveLimit @a $ \n (_ :: Proxy n) ->
+    forLimit @a $ \k (_ :: Proxy k) ->
+    property $ \(Edgy x :: Edgy a n) ->
+    unsafeWithKnownIntegral @(n + k) @a (n + k) $
+    unshiftProxy Proxy (shiftProxy @n @k Proxy x) === Just x
+prop_shiftProxy_unshiftProxy = forType $ \(_ :: Proxy a) ->
+    forLimit @a $ \n (_ :: Proxy n) ->
+    forLimit @a $ \k (_ :: Proxy k) ->
+    unsafeWithKnownIntegral @(n + k) @a (n + k) $
+    property $ \(Edgy x :: Edgy a (n + k)) ->
+    maybe True (== x) (shiftProxy Proxy <$> unshiftProxy @n @k Proxy x)
+
+prop_valid_add = forType $ \(_ :: Proxy a) ->
+    forPositiveLimit @a $ \n (_ :: Proxy n) ->
+    forPositiveLimit @a $ \m (_ :: Proxy m) ->
+    unsafeWithKnownIntegral @(n + m) @a (n + m) $
+    property $ \(Edgy x :: Edgy a n) (Edgy y :: Edgy a m) ->
+    isValidFinite $ add x y
+prop_getFinite_add = forType $ \(_ :: Proxy a) ->
+    forPositiveLimit @a $ \n (_ :: Proxy n) ->
+    forPositiveLimit @a $ \m (_ :: Proxy m) ->
+    unsafeWithKnownIntegral @(n + m) @a (n + m) $
+    property $ \(Edgy x :: Edgy a n) (Edgy y :: Edgy a m) ->
+    getFinite (add x y) === getFinite x + getFinite y
+
+prop_valid_sub = forType $ \(_ :: Proxy a) ->
+    forPositiveLimit @a $ \_ (_ :: Proxy n) ->
+    forPositiveLimit @a $ \_ (_ :: Proxy m) ->
+    property $ \(Edgy x :: Edgy a n) (Edgy y :: Edgy a m) ->
+    either isValidFinite isValidFinite $ sub x y
+prop_getFinite_sub = forType $ \(_ :: Proxy a) ->
+    forPositiveLimit @a $ \_ (_ :: Proxy n) ->
+    forPositiveLimit @a $ \_ (_ :: Proxy m) ->
+    property $ \(Edgy x :: Edgy a n) (Edgy y :: Edgy a m) ->
+    either (negate . toInteger . getFinite) (toInteger . getFinite) (sub x y)
+        === toInteger (getFinite x) - toInteger (getFinite y)
+prop_sub_Left_0 = forType $ \(_ :: Proxy a) ->
+    forPositiveLimit @a $ \_ (_ :: Proxy n) ->
+    forPositiveLimit @a $ \_ (_ :: Proxy m) ->
+    property $ \(Edgy x :: Edgy a n) (Edgy y :: Edgy a m) ->
+    sub x y =/= Left 0
+
+prop_valid_multiply = forType $ \(_ :: Proxy a) ->
+    forPositiveLimit @a $ \n (_ :: Proxy n) ->
+    forPositiveLimit @a $ \m (_ :: Proxy m) ->
+    unsafeWithKnownIntegral @(n GHC.TypeLits.* m) @a (n * m) $
+    property $ \(Edgy x :: Edgy a n) (Edgy y :: Edgy a m) ->
+    isValidFinite $ multiply x y
+prop_getFinite_multiply = forType $ \(_ :: Proxy a) ->
+    forPositiveLimit @a $ \n (_ :: Proxy n) ->
+    forPositiveLimit @a $ \m (_ :: Proxy m) ->
+    unsafeWithKnownIntegral @(n GHC.TypeLits.* m) @a (n * m) $
+    property $ \(Edgy x :: Edgy a n) (Edgy y :: Edgy a m) ->
+    getFinite (multiply x y) === getFinite x * getFinite y
+
+prop_valid_combineSum = forType $ \(_ :: Proxy a) ->
+    forLimit @a $ \n (_ :: Proxy n) ->
+    forLimit @a $ \m (_ :: Proxy m) ->
+    unsafeWithKnownIntegral @(n + m) @a (n + m) $
+    property $ \e ->
+    isValidFinite $ combineSum
+        $ bimap (\(Edgy x :: Edgy a n) -> x) (\(Edgy y :: Edgy a m) -> y) e
+prop_finites_combineSum = forType $ \(_ :: Proxy a) ->
+    forSmallLimit @a $ \n (_ :: Proxy n) ->
+    forSmallLimit @a $ \m (_ :: Proxy m) ->
+    unsafeWithKnownIntegral @(n + m) @a (n + m) $
+    map (combineSum @n @m @a) (map Left finites ++ map Right finites)
+        === finites
+
+prop_valid_combineProduct = forType $ \(_ :: Proxy a) ->
+    forLimit @a $ \n (_ :: Proxy n) ->
+    forLimit @a $ \m (_ :: Proxy m) ->
+    unsafeWithKnownIntegral @(n GHC.TypeLits.* m) @a (n * m) $
+    property $ \p ->
+    isValidFinite $ combineProduct
+        $ bimap (\(Edgy x :: Edgy a n) -> x) (\(Edgy y :: Edgy a m) -> y) p
+prop_finites_combineProduct = forType $ \(_ :: Proxy a) ->
+    forSmallLimit @a $ \n (_ :: Proxy n) ->
+    forSmallLimit @a $ \m (_ :: Proxy m) ->
+    unsafeWithKnownIntegral @(n GHC.TypeLits.* m) @a (n * m) $
+    map (combineProduct @n @m @a) [(x, y) | y <- finites, x <- finites]
+        === finites
+
+prop_valid_separateSum = forType $ \(_ :: Proxy a) ->
+    forLimit @a $ \n (_ :: Proxy n) ->
+    forLimit @a $ \m (_ :: Proxy m) ->
+    unsafeWithKnownIntegral @(n + m) @a (n + m) $
+    property $ \(Edgy x :: Edgy a (n + m)) ->
+    either isValidFinite isValidFinite $ separateSum @n @m x
+prop_finites_separateSum = forType $ \(_ :: Proxy a) ->
+    forSmallLimit @a $ \n (_ :: Proxy n) ->
+    forSmallLimit @a $ \m (_ :: Proxy m) ->
+    unsafeWithKnownIntegral @(n + m) @a (n + m) $
+    map (separateSum @n @m @a) finites === map Left finites ++ map Right finites
+
+prop_valid_separateProduct = forType $ \(_ :: Proxy a) ->
+    forLimit @a $ \n (_ :: Proxy n) ->
+    forLimit @a $ \m (_ :: Proxy m) ->
+    unsafeWithKnownIntegral @(n GHC.TypeLits.* m) @a (n * m) $
+    property $ \(Edgy x :: Edgy a (n GHC.TypeLits.* m)) ->
+    x -- could be discard
+        `seq` isValidFinite (fst $ separateProduct @n @m x)
+        .&&. isValidFinite (snd $ separateProduct @n @m x)
+prop_finites_separateProduct = forType $ \(_ :: Proxy a) ->
+    forSmallLimit @a $ \n (_ :: Proxy n) ->
+    forSmallLimit @a $ \m (_ :: Proxy m) ->
+    unsafeWithKnownIntegral @(n GHC.TypeLits.* m) @a (n * m) $
+    map (separateProduct @n @m @a) finites
+        === [(x, y) | y <- finites, x <- finites]
+
+prop_combineSum_separateSum = forType $ \(_ :: Proxy a) ->
+    forLimit @a $ \n (_ :: Proxy n) ->
+    forLimit @a $ \m (_ :: Proxy m) ->
+    unsafeWithKnownIntegral @(n + m) @a (n + m) $
+    property $ \(Edgy x :: Edgy a (n + m)) ->
+    combineSum (separateSum @n @m x) === x
+prop_separateSum_combineSum = forType $ \(_ :: Proxy a) ->
+    forLimit @a $ \n (_ :: Proxy n) ->
+    forLimit @a $ \m (_ :: Proxy m) ->
+    unsafeWithKnownIntegral @(n + m) @a (n + m) $
+    property $ \e ->
+    let x = bimap (\(Edgy x :: Edgy a n) -> x) (\(Edgy y :: Edgy a m) -> y) e in
+    separateSum (combineSum x) === x
+
+prop_combineProduct_separateProduct = forType $ \(_ :: Proxy a) ->
+    forLimit @a $ \n (_ :: Proxy n) ->
+    forLimit @a $ \m (_ :: Proxy m) ->
+    unsafeWithKnownIntegral @(n GHC.TypeLits.* m) @a (n * m) $
+    property $ \(Edgy x :: Edgy a (n GHC.TypeLits.* m)) ->
+    x -- could be discard
+        `seq` combineProduct (separateProduct @n @m x) === x
+prop_separateProduct_combineProduct = forType $ \(_ :: Proxy a) ->
+    forLimit @a $ \n (_ :: Proxy n) ->
+    forLimit @a $ \m (_ :: Proxy m) ->
+    unsafeWithKnownIntegral @(n GHC.TypeLits.* m) @a (n * m) $
+    property $ \p ->
+    let x = bimap (\(Edgy x :: Edgy a n) -> x) (\(Edgy y :: Edgy a m) -> y) p in
+    force x -- could be discard
+        `seq` separateProduct (combineProduct x) === x
 
 return []
 main = $quickCheckAll >>= \case
