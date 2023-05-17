@@ -23,18 +23,31 @@ jobs:
           - "8.10.7"
           - "9.0.2"
           - "9.2.7"
-          - "9.4.4"
+          - "9.4.5"
           - "9.6.1"
       fail-fast: false
     name: Build on Linux, GHC ${{ matrix.ghc_version }}
     runs-on: ${{ matrix.platform }}
     steps:
       - uses: actions/checkout@v3
+      - name: install ncurses5
+        if: ${{ matrix.ghc_version < '8.3' }}
+        run: |
+          sudo apt-get update
+          sudo apt-get -y install libncurses5 libtinfo5
+      - uses: actions/cache/restore@v3
+        id: cache-dependencies
+        with:
+          key: dependencies-${{ matrix.platform }}-${{ matrix.ghc_version }}-${{ hashFiles('finite-typelits.cabal') }}
+          restore-keys: dependencies-${{ matrix.platform }}-${{ matrix.ghc_version }}-
+          path: |
+            ~/.ghcup/ghc/${{ matrix.ghc_version }}
+            ~/.cabal/
       - uses: haskell/actions/setup@v2
+        id: setup
         with:
           ghc-version: ${{ matrix.ghc_version }}
           cabal-version: "3.10.1.0"
-
       - name: cabal sdist
         run: cabal sdist --output-dir "$GITHUB_WORKSPACE/sdist"
       - name: unpack
@@ -43,12 +56,19 @@ jobs:
           find "$GITHUB_WORKSPACE/sdist" -maxdepth 1 -type f -name '*.tar.gz' -exec tar -C "$GITHUB_WORKSPACE/unpacked" -xzvf {} \;
           echo "PKGDIR_finite_typelits=$(find "$GITHUB_WORKSPACE/unpacked" -maxdepth 1 -type d -regex '.*/finite-typelits-[0-9.]*')" >> "$GITHUB_ENV"
       - name: cabal configure
-        run: cd "$PKGDIR_finite_typelits" && cabal configure --with-ghc=ghc-${{ matrix.ghc_version }}
+        run: cd "$PKGDIR_finite_typelits" && cabal configure --with-ghc=${{ steps.setup.outputs.ghc-exe }}
       - name: Install dependencies
         run: cd "$PKGDIR_finite_typelits" && cabal build --dependencies-only --enable-tests --haddock-all
+      - uses: actions/cache/save@v3
+        if: ${{ steps.cache-dependencies.outputs.cache-primary-key != steps.cache-dependencies.outputs.cache-matched-key }}
+        with:
+          key: ${{ steps.cache-dependencies.outputs.cache-primary-key }}
+          path: |
+            ~/.ghcup/ghc/${{ matrix.ghc_version }}
+            ~/.cabal/
       - name: cabal build
         run: cd "$PKGDIR_finite_typelits" && cabal build --ghc-options=-Werror
-      - name: cabal test spec_test
+      - name: cabal test
         run: cd "$PKGDIR_finite_typelits" && cabal test
       - name: cabal check
         run: cd "$PKGDIR_finite_typelits" && cabal check
