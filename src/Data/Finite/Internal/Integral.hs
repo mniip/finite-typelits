@@ -1,6 +1,6 @@
 --------------------------------------------------------------------------------
 -- |
--- Module      :  Data.Finite.Integral.Internal
+-- Module      :  Data.Finite.Internal.Integral
 -- Copyright   :  (C) 2015-2023 mniip
 -- License     :  BSD3
 -- Maintainer  :  mniip <mniip@mniip.com>
@@ -27,7 +27,7 @@
 #if __GLASGOW_HASKELL__ >= 800
 {-# LANGUAGE UndecidableSuperClasses #-}
 #endif
-module Data.Finite.Integral.Internal
+module Data.Finite.Internal.Integral
     (
         SaneIntegral(..), Limited, KnownIntegral, intVal,
         withIntegral, withLimited,

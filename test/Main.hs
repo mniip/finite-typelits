@@ -30,7 +30,7 @@ import Unsafe.Coerce
 import Numeric.Natural
 
 import Data.Finite.Integral
-import Data.Finite.Integral.Internal
+import Data.Finite.Internal.Integral
 
 instance Arbitrary Natural where
     arbitrary = fromInteger . getNonNegative <$> arbitrary

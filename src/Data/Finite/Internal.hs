@@ -19,7 +19,7 @@ module Data.Finite.Internal
 
 import GHC.TypeLits
 
-import qualified Data.Finite.Integral.Internal as I
+import qualified Data.Finite.Internal.Integral as I
 
 -- | Finite number type. The type @'Finite' n@ is inhabited by exactly @n@
 -- values in the range @[0, n)@ including @0@ but excluding @n@. Invariants:

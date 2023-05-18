@@ -39,7 +39,7 @@ import Data.Coerce
 import Data.Proxy
 import GHC.TypeLits
 
-import Data.Finite.Integral.Internal
+import Data.Finite.Internal.Integral
 
 -- | Convert an @a@ into a @'Finite' a@, returning 'Nothing' if the input is
 -- out of bounds.
