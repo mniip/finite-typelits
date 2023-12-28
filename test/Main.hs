@@ -298,7 +298,7 @@ prop_valid_shift = withNatPos $ \n (_ :: Proxy n) ->
             isValidFinite $ shift @n x
 prop_finites_shift = withNat $ \n (_ :: Proxy n) ->
     unsafeWithKnownNat @(n + 1) (n + 1) $
-        map (shift @n) finites === tail finites
+        map (shift @n) finites === drop 1 finites
 
 prop_valid_unshift = withNat $ \n (_ :: Proxy n) ->
     unsafeWithKnownNat @(n + 1) (n + 1) $
