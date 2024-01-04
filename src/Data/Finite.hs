@@ -25,7 +25,7 @@ module Data.Finite
         weaken, strengthen, shift, unshift,
         weakenN, strengthenN, shiftN, unshiftN,
         weakenProxy, strengthenProxy, shiftProxy, unshiftProxy,
-        add, sub, multiply,
+        add, sub, difference, multiply,
         combineSum, combineProduct,
         separateSum, separateProduct,
         isValidFinite
@@ -180,6 +180,10 @@ sub :: forall n m. Finite n -> Finite m -> Either (Finite m) (Finite n)
 sub (Finite x) (Finite y)
     | x >= y = Right $ Finite $ x - y
     | otherwise = Left $ Finite $ y - x
+
+-- | Difference between two 'Finite's
+difference :: Finite n -> Finite n -> Finite (n-1)
+difference (Finite x) (Finite y) = Finite (abs (x-y))
 
 -- | Multiply two 'Finite's.
 multiply :: forall n m. Finite n -> Finite m -> Finite (n GHC.TypeLits.* m)
