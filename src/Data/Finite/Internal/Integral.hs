@@ -41,9 +41,11 @@ import Numeric.Natural
 import Control.DeepSeq
 import Control.Monad
 import Data.Ix
+import Data.Int
 import Data.Proxy
 import Data.Tagged
 import Data.Type.Equality
+import Data.Word
 import GHC.Exts
 import GHC.Read
 import GHC.TypeLits
@@ -51,6 +53,8 @@ import Language.Haskell.TH.Lib
 import Text.ParserCombinators.ReadPrec
 import Text.Read.Lex
 import Unsafe.Coerce
+
+#include "MachDeps.h"
 
 -- | A class of datatypes that faithfully represent a sub-range of 'Integer'
 -- that includes @0@. A valid instance must obey the following laws:
@@ -137,17 +141,87 @@ instance SaneIntegral Word where
             (# h, l #) -> case quotRemWord2# h l n of
                 (# _, r #) -> r)
 
+modAddViaWord :: (Num a, Integral a) => a -> a -> a -> a
+modAddViaWord n a b = fromIntegral
+    (modAdd (fromIntegral n) (fromIntegral a) (fromIntegral b) :: Word)
+
+modSubViaWord :: (Num a, Integral a) => a -> a -> a -> a
+modSubViaWord n a b = fromIntegral
+    (modSub (fromIntegral n) (fromIntegral a) (fromIntegral b) :: Word)
+
+modMulViaWord :: (Num a, Integral a) => a -> a -> a -> a
+modMulViaWord n a b = fromIntegral
+    (modMul (fromIntegral n) (fromIntegral a) (fromIntegral b) :: Word)
+
 instance SaneIntegral Int where
     type Limit Int = 'Just $(litT $ numTyLit $ toInteger (maxBound :: Int))
+    modAdd = modAddViaWord
+    modSub = modSubViaWord
+    modMul = modMulViaWord
 
-    modAdd n a b = fromIntegral
-        (modAdd (fromIntegral n) (fromIntegral a) (fromIntegral b) :: Word)
+instance SaneIntegral Word8 where
+    type Limit Word8
+        = 'Just $(litT $ numTyLit $ toInteger (maxBound :: Word8))
+    modAdd = modAddViaWord
+    modSub = modSubViaWord
+    modMul = modMulViaWord
 
-    modSub n a b = fromIntegral
-        (modSub (fromIntegral n) (fromIntegral a) (fromIntegral b) :: Word)
+instance SaneIntegral Int8 where
+    type Limit Int8
+        = 'Just $(litT $ numTyLit $ toInteger (maxBound :: Int8))
+    modAdd = modAddViaWord
+    modSub = modSubViaWord
+    modMul = modMulViaWord
 
-    modMul n a b = fromIntegral
-        (modMul (fromIntegral n) (fromIntegral a) (fromIntegral b) :: Word)
+instance SaneIntegral Word16 where
+    type Limit Word16
+        = 'Just $(litT $ numTyLit $ toInteger (maxBound :: Word16))
+    modAdd = modAddViaWord
+    modSub = modSubViaWord
+    modMul = modMulViaWord
+
+instance SaneIntegral Int16 where
+    type Limit Int16
+        = 'Just $(litT $ numTyLit $ toInteger (maxBound :: Int16))
+    modAdd = modAddViaWord
+    modSub = modSubViaWord
+    modMul = modMulViaWord
+
+instance SaneIntegral Word32 where
+    type Limit Word32
+        = 'Just $(litT $ numTyLit $ toInteger (maxBound :: Word32))
+#if WORD_SIZE_IN_BITS >= 32
+    modAdd = modAddViaWord
+    modSub = modSubViaWord
+    modMul = modMulViaWord
+#endif
+
+instance SaneIntegral Int32 where
+    type Limit Int32
+        = 'Just $(litT $ numTyLit $ toInteger (maxBound :: Int32))
+#if WORD_SIZE_IN_BITS >= 32
+    modAdd = modAddViaWord
+    modSub = modSubViaWord
+    modMul = modMulViaWord
+#endif
+
+instance SaneIntegral Word64 where
+    type Limit Word64
+        = 'Just $(litT $ numTyLit $ toInteger (maxBound :: Word64))
+#if WORD_SIZE_IN_BITS >= 64
+    modAdd = modAddViaWord
+    modSub = modSubViaWord
+    modMul = modMulViaWord
+#endif
+
+instance SaneIntegral Int64 where
+    type Limit Int64
+        = 'Just $(litT $ numTyLit $ toInteger (maxBound :: Int64))
+#if WORD_SIZE_IN_BITS >= 64
+    modAdd = modAddViaWord
+    modSub = modSubViaWord
+    modMul = modMulViaWord
+#endif
 
 type family LeqMaybe (n :: Nat) (c :: Maybe Nat) :: Constraint where
     LeqMaybe n 'Nothing = ()
@@ -227,6 +301,22 @@ instance (SaneIntegral a, KnownIntegral a n) => Bounded (Finite a n) where
 #endif
     {-# SPECIALIZE instance KnownIntegral Word n => Bounded (Finite Word n) #-}
     {-# SPECIALIZE instance KnownIntegral Int n => Bounded (Finite Int n) #-}
+    {-# SPECIALIZE instance
+        KnownIntegral Word8 n => Bounded (Finite Word8 n) #-}
+    {-# SPECIALIZE instance
+        KnownIntegral Int8 n => Bounded (Finite Int8 n) #-}
+    {-# SPECIALIZE instance
+        KnownIntegral Word16 n => Bounded (Finite Word16 n) #-}
+    {-# SPECIALIZE instance
+        KnownIntegral Int16 n => Bounded (Finite Int16 n) #-}
+    {-# SPECIALIZE instance
+        KnownIntegral Word32 n => Bounded (Finite Word32 n) #-}
+    {-# SPECIALIZE instance
+        KnownIntegral Int32 n => Bounded (Finite Int32 n) #-}
+    {-# SPECIALIZE instance
+        KnownIntegral Word64 n => Bounded (Finite Word64 n) #-}
+    {-# SPECIALIZE instance
+        KnownIntegral Int64 n => Bounded (Finite Int64 n) #-}
     maxBound
         | n > 0 = Finite $ n - 1
         | otherwise = error "maxBound: Finite _ 0 is uninhabited"
@@ -243,6 +333,14 @@ instance (SaneIntegral a, KnownIntegral a n) => Enum (Finite a n) where
 #endif
     {-# SPECIALIZE instance KnownIntegral Word n => Enum (Finite Word n) #-}
     {-# SPECIALIZE instance KnownIntegral Int n => Enum (Finite Int n) #-}
+    {-# SPECIALIZE instance KnownIntegral Word8 n => Enum (Finite Word8 n) #-}
+    {-# SPECIALIZE instance KnownIntegral Int8 n => Enum (Finite Int8 n) #-}
+    {-# SPECIALIZE instance KnownIntegral Word16 n => Enum (Finite Word16 n) #-}
+    {-# SPECIALIZE instance KnownIntegral Int16 n => Enum (Finite Int16 n) #-}
+    {-# SPECIALIZE instance KnownIntegral Word32 n => Enum (Finite Word32 n) #-}
+    {-# SPECIALIZE instance KnownIntegral Int32 n => Enum (Finite Int32 n) #-}
+    {-# SPECIALIZE instance KnownIntegral Word64 n => Enum (Finite Word64 n) #-}
+    {-# SPECIALIZE instance KnownIntegral Int64 n => Enum (Finite Int64 n) #-}
     succ (Finite x)
         | x == n - 1 = error "succ: bad argument"
         | otherwise = Finite $ succ x
@@ -284,6 +382,14 @@ instance (SaneIntegral a, KnownIntegral a n) => Num (Finite a n) where
 #endif
     {-# SPECIALIZE instance KnownIntegral Word n => Num (Finite Word n) #-}
     {-# SPECIALIZE instance KnownIntegral Int n => Num (Finite Int n) #-}
+    {-# SPECIALIZE instance KnownIntegral Word8 n => Num (Finite Word8 n) #-}
+    {-# SPECIALIZE instance KnownIntegral Int8 n => Num (Finite Int8 n) #-}
+    {-# SPECIALIZE instance KnownIntegral Word16 n => Num (Finite Word16 n) #-}
+    {-# SPECIALIZE instance KnownIntegral Int16 n => Num (Finite Int16 n) #-}
+    {-# SPECIALIZE instance KnownIntegral Word32 n => Num (Finite Word32 n) #-}
+    {-# SPECIALIZE instance KnownIntegral Int32 n => Num (Finite Int32 n) #-}
+    {-# SPECIALIZE instance KnownIntegral Word64 n => Num (Finite Word64 n) #-}
+    {-# SPECIALIZE instance KnownIntegral Int64 n => Num (Finite Int64 n) #-}
     Finite x + Finite y = Finite $ modAdd n x y
         where n = intVal (Proxy :: Proxy n)
     Finite x - Finite y = Finite $ modSub n x y
@@ -305,6 +411,14 @@ instance (SaneIntegral a, KnownIntegral a n) => Real (Finite a n) where
 #endif
     {-# SPECIALIZE instance KnownIntegral Word n => Real (Finite Word n) #-}
     {-# SPECIALIZE instance KnownIntegral Int n => Real (Finite Int n) #-}
+    {-# SPECIALIZE instance KnownIntegral Word8 n => Real (Finite Word8 n) #-}
+    {-# SPECIALIZE instance KnownIntegral Int8 n => Real (Finite Int8 n) #-}
+    {-# SPECIALIZE instance KnownIntegral Word16 n => Real (Finite Word16 n) #-}
+    {-# SPECIALIZE instance KnownIntegral Int16 n => Real (Finite Int16 n) #-}
+    {-# SPECIALIZE instance KnownIntegral Word32 n => Real (Finite Word32 n) #-}
+    {-# SPECIALIZE instance KnownIntegral Int32 n => Real (Finite Int32 n) #-}
+    {-# SPECIALIZE instance KnownIntegral Word64 n => Real (Finite Word64 n) #-}
+    {-# SPECIALIZE instance KnownIntegral Int64 n => Real (Finite Int64 n) #-}
     toRational (Finite x) = toRational x
 
 -- | 'quot' and 'rem' are the same as 'div' and 'mod' and they implement regular
@@ -316,6 +430,22 @@ instance (SaneIntegral a, KnownIntegral a n) => Integral (Finite a n) where
 #endif
     {-# SPECIALIZE instance KnownIntegral Word n => Integral (Finite Word n) #-}
     {-# SPECIALIZE instance KnownIntegral Int n => Integral (Finite Int n) #-}
+    {-# SPECIALIZE instance
+        KnownIntegral Word8 n => Integral (Finite Word8 n) #-}
+    {-# SPECIALIZE instance
+        KnownIntegral Int8 n => Integral (Finite Int8 n) #-}
+    {-# SPECIALIZE instance
+        KnownIntegral Word16 n => Integral (Finite Word16 n) #-}
+    {-# SPECIALIZE instance
+        KnownIntegral Int16 n => Integral (Finite Int16 n) #-}
+    {-# SPECIALIZE instance
+        KnownIntegral Word32 n => Integral (Finite Word32 n) #-}
+    {-# SPECIALIZE instance
+        KnownIntegral Int32 n => Integral (Finite Int32 n) #-}
+    {-# SPECIALIZE instance
+        KnownIntegral Word64 n => Integral (Finite Word64 n) #-}
+    {-# SPECIALIZE instance
+        KnownIntegral Int64 n => Integral (Finite Int64 n) #-}
     quot (Finite x) (Finite y) = Finite $ quot x y
     rem (Finite x) (Finite y) = Finite $ rem x y
     quotRem (Finite x) (Finite y) = case quotRem x y of
