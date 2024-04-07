@@ -29,14 +29,17 @@ module Data.Finite.Integral
         weakenN, strengthenN, shiftN, unshiftN,
         weakenProxy, strengthenProxy, shiftProxy, unshiftProxy,
         add, sub, multiply,
-        combineSum, combineProduct,
-        separateSum, separateProduct,
+        combineSum, combineZero, combineProduct, combineOne, combineExponential,
+        separateSum, separateZero, separateProduct, separateOne,
+        separateExponential,
         isValidFinite
     )
     where
 
 import Data.Coerce
+import Data.List
 import Data.Proxy
+import Data.Void
 import GHC.TypeLits
 
 import Data.Finite.Internal.Integral
@@ -258,6 +261,12 @@ combineSum (Right (Finite x)) = Finite $ x + n
     where n = intVal (Proxy :: Proxy n)
 {-# INLINABLE combineSum #-}
 
+-- | Witness that 'combineSum' preserves units: @0@ is the unit of
+-- 'GHC.TypeLits.+', and 'Void' is the unit of 'Either'.
+combineZero :: forall a. Void -> Finite a 0
+combineZero = absurd
+{-# INLINABLE combineZero #-}
+
 -- | 'fst'-biased (fst is the inner, and snd is the outer iteratee) product of
 -- finite sets.
 combineProduct
@@ -267,6 +276,26 @@ combineProduct
 combineProduct (Finite x, Finite y) = Finite $ x + y * n
     where n = intVal (Proxy :: Proxy n)
 {-# INLINABLE combineProduct #-}
+
+-- | Witness that 'combineProduct' preserves units: @1@ is the unit of
+-- 'GHC.TypeLits.*', and '()' is the unit of '(,)'.
+combineOne :: forall a. (SaneIntegral a, Limited a 1) => () -> Finite a 1
+combineOne _ = Finite 0
+{-# INLINABLE combineOne #-}
+
+-- | Product of @n@ copies of a finite set of size @m@, biased towards the lower
+-- values of the argument (colex order).
+combineExponential
+    :: forall n m a.
+        (SaneIntegral a, KnownIntegral a m, KnownIntegral a n, Limited a (m ^ n))
+    => (Finite a n -> Finite a m) -> Finite a (m ^ n)
+combineExponential f
+    = Finite $ fst $ foldl' next (0, 1) (finites :: [Finite a n])
+    where
+        next (acc, power) x = acc' `seq` (acc', m * power)
+            where acc' = acc + getFinite (f x) * power
+        m = intVal (Proxy :: Proxy m)
+{-# INLINABLE combineExponential #-}
 
 -- | Take a 'Left'-biased disjoint union apart.
 separateSum
@@ -278,13 +307,40 @@ separateSum (Finite x)
     where n = intVal (Proxy :: Proxy n)
 {-# INLINABLE separateSum #-}
 
+-- | Witness that 'separateSum' preserves units: @0@ is the unit of
+-- 'GHC.TypeLits.+', and 'Void' is the unit of 'Either'.
+--
+-- Also witness that a @'Finite' a 0@ is uninhabited.
+separateZero :: forall a. SaneIntegral a => Finite a 0 -> Void
+separateZero (Finite n) = n `seq` error
+    ("separateZero: got Finite " <> show (toInteger n))
+{-# INLINABLE separateZero #-}
+
 -- | Take a 'fst'-biased product apart.
 separateProduct
-    :: forall n m a. (SaneIntegral a, KnownIntegral a n, Limited a m)
+    :: forall n m a. (SaneIntegral a, KnownIntegral a n)
     => Finite a (n GHC.TypeLits.* m) -> (Finite a n, Finite a m)
-separateProduct (Finite x) = (Finite $ x `mod` n, Finite $ x `div` n)
+separateProduct (Finite x) = case divMod x n of
+    (d, m) -> (Finite m, Finite d)
     where n = intVal (Proxy :: Proxy n)
 {-# INLINABLE separateProduct #-}
+
+separateOne :: forall a. Finite a 1 -> ()
+separateOne _ = ()
+{-# INLINABLE separateOne #-}
+
+-- | Take a product of @n@ copies of a finite set of size @m@ apart, biased
+-- towards the lower values of the argument (colex order).
+separateExponential
+    :: forall n m a. (SaneIntegral a, KnownIntegral a m)
+    => Finite a (m ^ n) -> Finite a n -> Finite a m
+separateExponential = go
+    where
+        go (Finite n) (Finite 0) = Finite $ n `mod` m
+        go (Finite n) (Finite x) = n' `seq` go (Finite n') (Finite $ x - 1)
+            where n' = n `div` m
+        m = intVal (Proxy :: Proxy m)
+{-# INLINABLE separateExponential #-}
 
 -- | Verifies that a given 'Finite' is valid. Should always return 'True' unless
 -- you bring the @Data.Finite.Internal.Finite@ constructor into the scope, or

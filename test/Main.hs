@@ -957,6 +957,14 @@ prop_finites_combineSum = forType $ \(_ :: Proxy a) ->
     map (combineSum @n @m @a) (map Left finites ++ map Right finites)
         === finites
 
+prop_valid_combineZero = forType $ \(_ :: Proxy a) ->
+    unsafeWithKnownIntegral @0 @a 0 $
+    ioProperty $ evaluate (isValidFinite $ combineZero @a $ error "test")
+        `catch` \(ErrorCall msg) -> pure (msg == "test")
+prop_finites_combineZero = forType $ \(_ :: Proxy a) ->
+    unsafeWithKnownIntegral @0 @a 0 $
+    map (combineZero @a) [] === finites
+
 prop_valid_combineProduct = forType $ \(_ :: Proxy a) ->
     forLimit @a $ \n (_ :: Proxy n) ->
     forLimit @a $ \m (_ :: Proxy m) ->
@@ -971,6 +979,30 @@ prop_finites_combineProduct = forType $ \(_ :: Proxy a) ->
     map (combineProduct @n @m @a) [(x, y) | y <- finites, x <- finites]
         === finites
 
+prop_valid_combineOne = forType $ \(_ :: Proxy a) ->
+    unsafeWithKnownIntegral @1 @a 1 $
+    property $ isValidFinite $ combineOne @a ()
+prop_finites_combineOne = forType $ \(_ :: Proxy a) ->
+    unsafeWithKnownIntegral @1 @a 1 $
+    property $ [combineOne @a ()] === finites
+
+prop_valid_combineExponential = forType $ \(_ :: Proxy a) ->
+    forSmallLimit @a $ \n (_ :: Proxy n) ->
+    forSmallLimit @a $ \m (_ :: Proxy m) ->
+    unsafeWithKnownIntegral @(m ^ n) @a (m ^ n) $
+    property $ \(Blind (f :: Big a n -> Big a m)) ->
+    isValidFinite $ combineExponential (\x -> case f (Big x) of Big y -> y)
+prop_finites_combineExponential = forType $ \(_ :: Proxy a) ->
+    forSmallLimit @a $ \n (_ :: Proxy n) ->
+    forSmallLimit @a $ \m (_ :: Proxy m) ->
+    if m ^ n > 2000000 then property () else
+    m ^ n <= 10000 ==>
+    unsafeWithKnownIntegral @(m ^ n) @a (m ^ n) $
+    property $
+        [ combineExponential ((xs !!) . fromIntegral . getFinite @n @a)
+        | xs <- reverse <$> replicateM n (finites @m)
+        ] === finites
+
 prop_valid_separateSum = forType $ \(_ :: Proxy a) ->
     forLimit @a $ \n (_ :: Proxy n) ->
     forLimit @a $ \m (_ :: Proxy m) ->
@@ -982,6 +1014,14 @@ prop_finites_separateSum = forType $ \(_ :: Proxy a) ->
     forSmallLimit @a $ \m (_ :: Proxy m) ->
     unsafeWithKnownIntegral @(n + m) @a (n + m) $
     map (separateSum @n @m @a) finites === map Left finites ++ map Right finites
+
+prop_seq_separateZero = forType $ \(_ :: Proxy a) ->
+    unsafeWithKnownIntegral @0 @a 0 $
+    ioProperty $ evaluate (absurd $ separateZero @a $ error "test")
+        `catch` \(ErrorCall msg) -> pure (msg == "test")
+prop_finites_separateZero = forType $ \(_ :: Proxy a) ->
+    unsafeWithKnownIntegral @0 @a 0 $
+    map (separateZero @a) finites === []
 
 prop_valid_separateProduct = forType $ \(_ :: Proxy a) ->
     forLimit @a $ \n (_ :: Proxy n) ->
@@ -997,6 +1037,26 @@ prop_finites_separateProduct = forType $ \(_ :: Proxy a) ->
     unsafeWithKnownIntegral @(n GHC.TypeLits.* m) @a (n * m) $
     map (separateProduct @n @m @a) finites
         === [(x, y) | y <- finites, x <- finites]
+
+prop_finites_separateOne = forType $ \(_ :: Proxy a) ->
+    unsafeWithKnownIntegral @1 @a 1 $
+    map (separateOne @a) finites === [()]
+
+prop_valid_separateExponential = forType $ \(_ :: Proxy a) ->
+    forSmallLimit @a $ \n (_ :: Proxy n) ->
+    forSmallLimit @a $ \m (_ :: Proxy m) ->
+    unsafeWithKnownIntegral @(m ^ n) @a (m ^ n) $
+    property $ \(Big f :: Big a (m ^ n)) (Big x :: Big a n) ->
+    f `seq` x -- could be discard
+        `seq` isValidFinite (separateExponential @n @m @a f x)
+prop_finites_separateExponential = forType $ \(_ :: Proxy a) ->
+    forSmallLimit @a $ \n (_ :: Proxy n) ->
+    forSmallLimit @a $ \m (_ :: Proxy m) ->
+    if m ^ n > 2000000 then property () else
+    m ^ n <= 10000 ==>
+    unsafeWithKnownIntegral @(m ^ n) @a (m ^ n) $
+    map (<$> finites) (map (separateExponential @n @m @a) finites)
+        === [reverse xs | xs <- replicateM n finites]
 
 prop_combineSum_separateSum = forType $ \(_ :: Proxy a) ->
     forLimit @a $ \n (_ :: Proxy n) ->
@@ -1027,6 +1087,32 @@ prop_separateProduct_combineProduct = forType $ \(_ :: Proxy a) ->
     let x = bimap (\(Edgy x :: Edgy a n) -> x) (\(Edgy y :: Edgy a m) -> y) p in
     force x -- could be discard
         `seq` separateProduct (combineProduct x) === x
+
+prop_combineOne_separateOne = forType $ \(_ :: Proxy a) ->
+    unsafeWithKnownIntegral @1 @a 1 $
+    property $ \(Big x :: Big a 1) ->
+    combineOne (separateOne @a x) === x
+prop_separateOne_combineOne = forType $ \(_ :: Proxy a) ->
+    unsafeWithKnownIntegral @1 @a 1 $
+    property $ \x ->
+    separateOne (combineOne @a x) === x
+
+prop_separateExponential_combineExponential = forType $ \(_ :: Proxy a) ->
+    forSmallLimit @a $ \n (_ :: Proxy n) ->
+    forSmallLimit @a $ \m (_ :: Proxy m) ->
+    unsafeWithKnownIntegral @(m ^ n) @a (m ^ n) $
+    property $ \(Blind (f :: Big a n -> Big a m)) ->
+    let f' x = case f (Big x) of Big y -> y in
+    force (f' <$> listToMaybe finites) -- could be discard
+        `seq` (separateExponential @n @m @a (combineExponential f') <$> finites)
+            === (f' <$> finites)
+prop_combineExponential_separateExponential = forType $ \(_ :: Proxy a) ->
+    forSmallLimit @a $ \n (_ :: Proxy n) ->
+    forSmallLimit @a $ \m (_ :: Proxy m) ->
+    unsafeWithKnownIntegral @(m ^ n) @a (m ^ n) $
+    property $ \(Big f :: Big a (m ^ n)) ->
+    f `seq` -- could be discard
+        combineExponential (separateExponential @n @m @a f) === f
 
 return []
 main = $quickCheckAll >>= \case

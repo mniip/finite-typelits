@@ -26,13 +26,15 @@ module Data.Finite
         weakenN, strengthenN, shiftN, unshiftN,
         weakenProxy, strengthenProxy, shiftProxy, unshiftProxy,
         add, sub, multiply,
-        combineSum, combineProduct,
-        separateSum, separateProduct,
+        combineSum, combineZero, combineProduct, combineOne, combineExponential,
+        separateSum, separateZero, separateProduct, separateOne,
+        separateExponential,
         isValidFinite
     )
     where
 
 import GHC.TypeLits
+import Data.Void
 
 import qualified Data.Finite.Integral as I
 import Data.Finite.Internal
@@ -158,6 +160,11 @@ combineSum
     => Either (Finite n) (Finite m) -> Finite (n + m)
 combineSum = I.combineSum
 
+-- | Witness that 'combineSum' preserves units: @0@ is the unit of
+-- 'GHC.TypeLits.+', and 'Void' is the unit of 'Either'.
+combineZero :: Void -> Finite 0
+combineZero = I.combineZero
+
 -- | 'fst'-biased (fst is the inner, and snd is the outer iteratee) product of
 -- finite sets.
 combineProduct
@@ -165,17 +172,46 @@ combineProduct
     => (Finite n, Finite m) -> Finite (n GHC.TypeLits.* m)
 combineProduct = I.combineProduct
 
+-- | Witness that 'combineProduct' preserves units: @1@ is the unit of
+-- 'GHC.TypeLits.*', and '()' is the unit of '(,)'.
+combineOne :: () -> Finite 1
+combineOne = I.combineOne
+
+-- | Product of @n@ copies of a finite set of size @m@, biased towards the lower
+-- values of the argument (colex order).
+combineExponential
+    :: forall n m. (KnownNat m, KnownNat n)
+    => (Finite n -> Finite m) -> Finite (m ^ n)
+combineExponential = I.combineExponential
+
 -- | Take a 'Left'-biased disjoint union apart.
 separateSum
     :: forall n m. KnownNat n
     => Finite (n + m) -> Either (Finite n) (Finite m)
 separateSum = I.separateSum
 
+-- | Witness that 'separateSum' preserves units: @0@ is the unit of
+-- 'GHC.TypeLits.+', and 'Void' is the unit of 'Either'.
+--
+-- Also witness that a @'Finite' 0@ is uninhabited.
+separateZero :: Finite 0 -> Void
+separateZero = I.separateZero
+
 -- | Take a 'fst'-biased product apart.
 separateProduct
     :: forall n m. KnownNat n
     => Finite (n GHC.TypeLits.* m) -> (Finite n, Finite m)
 separateProduct = I.separateProduct
+
+separateOne :: Finite 1 -> ()
+separateOne = I.separateOne
+
+-- | Take a product of @n@ copies of a finite set of size @m@ apart, biased
+-- towards the lower values of the argument (colex order).
+separateExponential
+    :: forall n m. KnownNat m
+    => Finite (m ^ n) -> Finite n -> Finite m
+separateExponential = I.separateExponential
 
 -- | Verifies that a given 'Finite' is valid. Should always return 'True' unless
 -- you bring the @Data.Finite.Internal.Finite@ constructor into the scope, or
