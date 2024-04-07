@@ -313,7 +313,7 @@ separateSum (Finite x)
 -- Also witness that a @'Finite' a 0@ is uninhabited.
 separateZero :: forall a. SaneIntegral a => Finite a 0 -> Void
 separateZero (Finite n) = n `seq` error
-    ("separateZero: got Finite " <> show (toInteger n))
+    ("separateZero: got Finite " ++ show (toInteger n))
 {-# INLINABLE separateZero #-}
 
 -- | Take a 'fst'-biased product apart.
