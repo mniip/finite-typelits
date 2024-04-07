@@ -1,7 +1,7 @@
 --------------------------------------------------------------------------------
 -- |
 -- Module      :  Data.Finite.Internal.Integral
--- Copyright   :  (C) 2015-2023 mniip
+-- Copyright   :  (C) 2015-2024 mniip
 -- License     :  BSD3
 -- Maintainer  :  mniip <mniip@mniip.com>
 -- Stability   :  experimental
@@ -223,9 +223,9 @@ instance SaneIntegral Int64 where
     modMul = modMulViaWord
 #endif
 
-type family LeqMaybe (n :: Nat) (c :: Maybe Nat) :: Constraint where
-    LeqMaybe n 'Nothing = ()
-    LeqMaybe n ('Just m) = n <= m
+class LeqMaybe (n :: Nat) (c :: Maybe Nat)
+instance LeqMaybe n 'Nothing
+instance n <= m => LeqMaybe n ('Just m)
 
 -- | Ensures that the value of @n@ is representable in type @a@ (which should be
 -- a 'SaneIntegral').
