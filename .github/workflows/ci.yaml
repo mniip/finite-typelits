@@ -37,42 +37,47 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get -y install libncurses5 libtinfo5
-      - uses: actions/cache/restore@v3
-        id: cache-dependencies
-        with:
-          key: dependencies-${{ matrix.platform }}-${{ matrix.ghc_version }}-${{ hashFiles('finite-typelits.cabal') }}
-          restore-keys: dependencies-${{ matrix.platform }}-${{ matrix.ghc_version }}-
-          path: |
-            ~/.ghcup/ghc/${{ matrix.ghc_version }}
-            ~/.cabal/
-      - uses: haskell/actions/setup@v2
+
+      - uses: haskell-actions/setup@v2
         id: setup
         with:
           ghc-version: ${{ matrix.ghc_version }}
-          cabal-version: "3.10.1.0"
-      - name: cabal sdist
-        run: cabal sdist --output-dir "$GITHUB_WORKSPACE/sdist"
-      - name: unpack
+
+      - name: Configure the build
         run: |
-          mkdir -p "$GITHUB_WORKSPACE/unpacked"
-          find "$GITHUB_WORKSPACE/sdist" -maxdepth 1 -type f -name '*.tar.gz' -exec tar -C "$GITHUB_WORKSPACE/unpacked" -xzvf {} \;
-          echo "PKGDIR_finite_typelits=$(find "$GITHUB_WORKSPACE/unpacked" -maxdepth 1 -type d -regex '.*/finite-typelits-[0-9.]*')" >> "$GITHUB_ENV"
-      - name: cabal configure
-        run: cd "$PKGDIR_finite_typelits" && cabal configure --with-ghc=${{ steps.setup.outputs.ghc-exe }} ${{ matrix.ghc_version < '8.1' && '--disable-optimization' || '' }}
-      - name: Install dependencies
-        run: cd "$PKGDIR_finite_typelits" && cabal build --dependencies-only --enable-tests --haddock-all
-      - uses: actions/cache/save@v3
-        if: ${{ steps.cache-dependencies.outputs.cache-primary-key != steps.cache-dependencies.outputs.cache-matched-key }}
+          cabal configure --enable-tests --enable-benchmarks --disable-documentation ${{ matrix.ghc_version < '8.1' && '--disable-optimization' || '' }}
+          cabal build all --dry-run
+        # The last step generates dist-newstyle/cache/plan.json for the cache key.
+
+      - name: Restore cached dependencies
+        uses: actions/cache/restore@v4
+        id: cache
+        env:
+          key: ${{ runner.os }}-ghc-${{ steps.setup.outputs.ghc-version }}-cabal-${{ steps.setup.outputs.cabal-version }}
         with:
-          key: ${{ steps.cache-dependencies.outputs.cache-primary-key }}
-          path: |
-            ~/.ghcup/ghc/${{ matrix.ghc_version }}
-            ~/.cabal/
+          path: ${{ steps.setup.outputs.cabal-store }}
+          key: ${{ env.key }}-plan-${{ hashFiles('**/plan.json') }}
+          restore-keys: ${{ env.key }}-
+
+      - name: Install dependencies
+        # If we had an exact cache hit, the dependencies will be up to date.
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: cabal build all --enable-tests --enable-benchmarks --only-dependencies
+
+      # Cache dependencies already here, so that we do not have to rebuild them should the subsequent steps fail.
+      - name: Save cached dependencies
+        uses: actions/cache/save@v4
+        # If we had an exact cache hit, trying to save the cache would error because of key clash.
+        if: steps.cache.outputs.cache-hit != 'true'
+        with:
+          path: ${{ steps.setup.outputs.cabal-store }}
+          key: ${{ steps.cache.outputs.cache-primary-key }}
+
       - name: cabal build
-        run: cd "$PKGDIR_finite_typelits" && cabal build --ghc-options=-Werror
+        run: cabal build --ghc-options=-Werror
       - name: cabal test
-        run: cd "$PKGDIR_finite_typelits" && cabal test
+        run: cabal test
       - name: cabal check
-        run: cd "$PKGDIR_finite_typelits" && cabal check
+        run: cabal check
       - name: cabal haddock
-        run: cd "$PKGDIR_finite_typelits" && cabal haddock
+        run: cabal haddock
