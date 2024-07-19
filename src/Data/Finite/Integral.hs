@@ -8,6 +8,7 @@
 -- Portability :  portable
 --------------------------------------------------------------------------------
 {-# LANGUAGE ConstraintKinds #-}
+{-# LANGUAGE CPP #-}
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE ExplicitForAll #-}
 {-# LANGUAGE FlexibleContexts #-}
@@ -37,7 +38,9 @@ module Data.Finite.Integral
     where
 
 import Data.Coerce
-import Data.List
+#if __GLASGOW_HASKELL__ < 910
+import Data.List (foldl')
+#endif
 import Data.Proxy
 import Data.Void
 import GHC.TypeLits
