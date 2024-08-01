@@ -4,6 +4,7 @@
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE GADTs #-}
+{-# LANGUAGE InstanceSigs #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE ScopedTypeVariables #-}
@@ -11,6 +12,7 @@
 {-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE TypeOperators #-}
+{-# LANGUAGE UndecidableInstances #-}
 module Main where
 
 import Control.Exception
@@ -96,21 +98,25 @@ instance
 data SLimited a where
     SLimited :: (Limited a n, KnownNat n) => Proxy n -> SLimited a
 
-mkLimited
-    :: forall a lim. (SaneIntegral a, Limit a ~ 'Just lim, KnownNat lim)
-    => Integer -> Maybe (SLimited a)
-mkLimited n = case someNatVal n of
-    Just (SomeNat p)
-        | n <= natVal @lim Proxy
-        -> Just $ unsafeWithLimited (Proxy @a) p SLimited p
-    _ -> Nothing
+class MkSLimited (lim :: Maybe Nat) where
+    mkSLimited
+        :: forall a. (SaneIntegral a, Limit a ~ lim)
+        => Integer -> Maybe (SLimited a)
 
-mkUnlimited
-    :: forall a. Limit a ~ 'Nothing
-    => Integer -> Maybe (SLimited a)
-mkUnlimited n = case someNatVal n of
-    Just (SomeNat p) -> Just $ SLimited p
-    _ -> Nothing
+instance KnownNat lim => MkSLimited ('Just lim) where
+    mkSLimited
+        :: forall a. (SaneIntegral a, Limit a ~ 'Just lim)
+        => Integer -> Maybe (SLimited a)
+    mkSLimited n = case someNatVal n of
+        Just (SomeNat p)
+            | n <= natVal @lim Proxy
+            -> Just $ unsafeWithLimited (Proxy @a) p $ SLimited p
+        _ -> Nothing
+
+instance MkSLimited 'Nothing where
+    mkSLimited n = case someNatVal n of
+        Just (SomeNat p) -> Just $ SLimited p
+        _ -> Nothing
 
 genSmall, genOver7, genOver8, genOver15, genOver16, genOver31, genOver32,
     genOver63, genOver64, genOverI, genOverW, genUnder7, genUnder8, genUnder15,
@@ -138,14 +144,19 @@ genUnder64 = ((toInteger (maxBound @Word64) -) <$> genSmall) `suchThat` (>= 0)
 genUnderI = ((toInteger (maxBound @Int) -) <$> genSmall) `suchThat` (>= 0)
 genUnderW = ((toInteger (maxBound @Word) -) <$> genSmall) `suchThat` (>= 0)
 
+shrinkSLimited
+    :: (SaneIntegral a, MkSLimited (Limit a), Arbitrary a)
+    => SLimited a -> [SLimited a]
+shrinkSLimited (SLimited p) = mapMaybe mkSLimited $ shrink $ natVal p
+
 instance Arbitrary (SLimited Integer) where
     arbitrary = oneof
         [ genSmall, genUnder7, genOver7, genUnder8, genOver8, genUnder15
         , genOver15, genUnder16, genOver16, genUnder31, genOver31, genUnder32
         , genOver32, genUnder63, genOver63, genUnder64, genOver64, genUnderI
         , genOverI, genUnderW, genOverW ]
-        `suchThatMap` mkUnlimited
-    shrink (SLimited p) = mapMaybe mkUnlimited $ shrink $ natVal p
+        `suchThatMap` mkSLimited
+    shrink = shrinkSLimited
 
 instance Arbitrary (SLimited Natural) where
     arbitrary = oneof
@@ -153,8 +164,8 @@ instance Arbitrary (SLimited Natural) where
         , genOver15, genUnder16, genOver16, genUnder31, genOver31, genUnder32
         , genOver32, genUnder63, genOver63, genUnder64, genOver64, genUnderI
         , genOverI, genUnderW, genOverW ]
-        `suchThatMap` mkUnlimited
-    shrink (SLimited p) = mapMaybe mkUnlimited $ shrink $ natVal p
+        `suchThatMap` mkSLimited
+    shrink = shrinkSLimited
 
 instance Arbitrary (SLimited Word) where
     arbitrary = oneof
@@ -162,55 +173,55 @@ instance Arbitrary (SLimited Word) where
         , genOver15, genUnder16, genOver16, genUnder31, genOver31, genUnder32
         , genOver32, genUnder63, genOver63, genUnder64, genOver64, genUnderI
         , genOverI, genUnderW ]
-        `suchThatMap` mkLimited
-    shrink (SLimited p) = mapMaybe mkLimited $ shrink $ natVal p
+        `suchThatMap` mkSLimited
+    shrink = shrinkSLimited
 
 instance Arbitrary (SLimited Int) where
     arbitrary = oneof
         [ genSmall, genUnder7, genOver7, genUnder8, genOver8, genUnder15
         , genOver15, genUnder16, genOver16, genUnder31, genOver31, genUnder32
         , genOver32, genUnder63, genOver63, genUnder64, genOver64, genUnderI ]
-        `suchThatMap` mkLimited
-    shrink (SLimited p) = mapMaybe mkLimited $ shrink $ natVal p
+        `suchThatMap` mkSLimited
+    shrink = shrinkSLimited
 
 instance Arbitrary (SLimited Word8) where
     arbitrary = oneof
         [ genSmall, genUnder7, genOver7, genUnder8 ]
-        `suchThatMap` mkLimited
-    shrink (SLimited p) = mapMaybe mkLimited $ shrink $ natVal p
+        `suchThatMap` mkSLimited
+    shrink = shrinkSLimited
 
 instance Arbitrary (SLimited Int8) where
     arbitrary = oneof
         [ genSmall, genUnder7 ]
-        `suchThatMap` mkLimited
-    shrink (SLimited p) = mapMaybe mkLimited $ shrink $ natVal p
+        `suchThatMap` mkSLimited
+    shrink = shrinkSLimited
 
 instance Arbitrary (SLimited Word16) where
     arbitrary = oneof
         [ genSmall, genUnder7, genOver7, genUnder8, genOver8, genUnder15
         , genOver15, genUnder16 ]
-        `suchThatMap` mkLimited
-    shrink (SLimited p) = mapMaybe mkLimited $ shrink $ natVal p
+        `suchThatMap` mkSLimited
+    shrink = shrinkSLimited
 
 instance Arbitrary (SLimited Int16) where
     arbitrary = oneof
         [ genSmall, genUnder7, genOver7, genUnder8, genOver8, genUnder15 ]
-        `suchThatMap` mkLimited
-    shrink (SLimited p) = mapMaybe mkLimited $ shrink $ natVal p
+        `suchThatMap` mkSLimited
+    shrink = shrinkSLimited
 
 instance Arbitrary (SLimited Word32) where
     arbitrary = oneof
         [ genSmall, genUnder7, genOver7, genUnder8, genOver8, genUnder15
         , genOver15, genUnder16, genOver16, genUnder31, genOver31, genUnder32 ]
-        `suchThatMap` mkLimited
-    shrink (SLimited p) = mapMaybe mkLimited $ shrink $ natVal p
+        `suchThatMap` mkSLimited
+    shrink = shrinkSLimited
 
 instance Arbitrary (SLimited Int32) where
     arbitrary = oneof
         [ genSmall, genUnder7, genOver7, genUnder8, genOver8, genUnder15
         , genOver15, genUnder16, genOver16, genUnder31 ]
-        `suchThatMap` mkLimited
-    shrink (SLimited p) = mapMaybe mkLimited $ shrink $ natVal p
+        `suchThatMap` mkSLimited
+    shrink = shrinkSLimited
 
 instance Arbitrary (SLimited Word64) where
     arbitrary = oneof
@@ -218,65 +229,22 @@ instance Arbitrary (SLimited Word64) where
         , genOver15, genUnder16, genOver16, genUnder31, genOver31, genUnder32
         , genOver32, genUnder63, genOver63, genUnder64, genOverI, genUnderW
         , genOverW ]
-        `suchThatMap` mkLimited
-    shrink (SLimited p) = mapMaybe mkLimited $ shrink $ natVal p
+        `suchThatMap` mkSLimited
+    shrink = shrinkSLimited
 
 instance Arbitrary (SLimited Int64) where
     arbitrary = oneof
         [ genSmall, genUnder7, genOver7, genUnder8, genOver8, genUnder15
         , genOver15, genUnder16, genOver16, genUnder31, genOver31, genUnder32
         , genOver32, genUnder63, genUnderI, genOverI, genUnderW, genOverW ]
-        `suchThatMap` mkLimited
-    shrink (SLimited p) = mapMaybe mkLimited $ shrink $ natVal p
+        `suchThatMap` mkSLimited
+    shrink = shrinkSLimited
 
 newtype SmallLimited a = SmallLimited { getSmallLimited :: SLimited a }
 
-instance Arbitrary (SmallLimited Integer) where
-    arbitrary = SmallLimited <$> genSmall `suchThatMap` mkUnlimited
-    shrink = map SmallLimited . shrink . getSmallLimited
-
-instance Arbitrary (SmallLimited Natural) where
-    arbitrary = SmallLimited <$> genSmall `suchThatMap` mkUnlimited
-    shrink = map SmallLimited . shrink . getSmallLimited
-
-instance Arbitrary (SmallLimited Word) where
-    arbitrary = SmallLimited <$> genSmall `suchThatMap` mkLimited
-    shrink = map SmallLimited . shrink . getSmallLimited
-
-instance Arbitrary (SmallLimited Int) where
-    arbitrary = SmallLimited <$> genSmall `suchThatMap` mkLimited
-    shrink = map SmallLimited . shrink . getSmallLimited
-
-instance Arbitrary (SmallLimited Word8) where
-    arbitrary = SmallLimited <$> genSmall `suchThatMap` mkLimited
-    shrink = map SmallLimited . shrink . getSmallLimited
-
-instance Arbitrary (SmallLimited Int8) where
-    arbitrary = SmallLimited <$> genSmall `suchThatMap` mkLimited
-    shrink = map SmallLimited . shrink . getSmallLimited
-
-instance Arbitrary (SmallLimited Word16) where
-    arbitrary = SmallLimited <$> genSmall `suchThatMap` mkLimited
-    shrink = map SmallLimited . shrink . getSmallLimited
-
-instance Arbitrary (SmallLimited Int16) where
-    arbitrary = SmallLimited <$> genSmall `suchThatMap` mkLimited
-    shrink = map SmallLimited . shrink . getSmallLimited
-
-instance Arbitrary (SmallLimited Word32) where
-    arbitrary = SmallLimited <$> genSmall `suchThatMap` mkLimited
-    shrink = map SmallLimited . shrink . getSmallLimited
-
-instance Arbitrary (SmallLimited Int32) where
-    arbitrary = SmallLimited <$> genSmall `suchThatMap` mkLimited
-    shrink = map SmallLimited . shrink . getSmallLimited
-
-instance Arbitrary (SmallLimited Word64) where
-    arbitrary = SmallLimited <$> genSmall `suchThatMap` mkLimited
-    shrink = map SmallLimited . shrink . getSmallLimited
-
-instance Arbitrary (SmallLimited Int64) where
-    arbitrary = SmallLimited <$> genSmall `suchThatMap` mkLimited
+instance (SaneIntegral a, MkSLimited (Limit a), Arbitrary (SLimited a))
+    => Arbitrary (SmallLimited a) where
+    arbitrary = SmallLimited <$> genSmall `suchThatMap` mkSLimited
     shrink = map SmallLimited . shrink . getSmallLimited
 
 type Good a =
@@ -287,7 +255,7 @@ type Good a =
     , SaneIntegral a
     , Arbitrary a
     , Arbitrary (SLimited a)
-    , Arbitrary (SmallLimited a)
+    , MkSLimited (Limit a)
     , CoArbitrary a
     )
 
@@ -356,23 +324,10 @@ forSmallLimit = forLimit' @a
     (map getSmallLimited . shrink . SmallLimited)
 
 unsafeWithKnownIntegral
-    :: forall n a. (SaneIntegral a, Typeable a)
+    :: forall n a. (SaneIntegral a, MkSLimited (Limit a), Typeable a)
     => Integer -> ((KnownNat n, Limited a n) => Property) -> Property
 unsafeWithKnownIntegral n prop
-    | Just (Refl :: a :~: Integer) <- cast (Refl @a)
-    , Just (SLimited (_ :: Proxy n')) <- mkUnlimited @a n
-    , Refl <- unsafeCoerce Refl :: n :~: n'
-    = prop
-    | Just (Refl :: a :~: Natural) <- cast (Refl @a)
-    , Just (SLimited (_ :: Proxy n')) <- mkUnlimited @a n
-    , Refl <- unsafeCoerce Refl :: n :~: n'
-    = prop
-    | Just (Refl :: a :~: Word) <- cast (Refl @a)
-    , Just (SLimited (_ :: Proxy n')) <- mkLimited @a n
-    , Refl <- unsafeCoerce Refl :: n :~: n'
-    = prop
-    | Just (Refl :: a :~: Int) <- cast (Refl @a)
-    , Just (SLimited (_ :: Proxy n')) <- mkLimited @a n
+    | Just (SLimited (_ :: Proxy n')) <- mkSLimited @_ @a n
     , Refl <- unsafeCoerce Refl :: n :~: n'
     = prop
     | otherwise = discard
