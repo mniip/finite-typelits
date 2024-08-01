@@ -33,6 +33,7 @@ module Data.Finite.Integral
         combineSum, combineZero, combineProduct, combineOne, combineExponential,
         separateSum, separateZero, separateProduct, separateOne,
         separateExponential,
+        castFinite,
         isValidFinite
     )
     where
@@ -344,6 +345,13 @@ separateExponential = go
             where n' = n `div` m
         m = intVal (Proxy :: Proxy m)
 {-# INLINABLE separateExponential #-}
+
+-- | Convert a 'Finite' between different 'SaneIntegral' numeric types.
+castFinite
+    :: forall b a n. (SaneIntegral a, SaneIntegral b, Limited b n)
+    => Finite a n -> Finite b n
+castFinite (Finite x) = Finite $ fromIntegral x
+{-# INLINABLE castFinite #-}
 
 -- | Verifies that a given 'Finite' is valid. Should always return 'True' unless
 -- you bring the @Data.Finite.Internal.Finite@ constructor into the scope, or
