@@ -10,6 +10,7 @@
 {-# LANGUAGE ConstraintKinds #-}
 {-# LANGUAGE CPP #-}
 {-# LANGUAGE DataKinds #-}
+{-# LANGUAGE DefaultSignatures #-}
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
@@ -106,6 +107,13 @@ class Integral a => SaneIntegral a where
     modMul n a b = fromInteger
         (modMul (toInteger n) (toInteger a) (toInteger b) :: Integer)
 
+    unsafeWithLimited :: proxy1 a -> proxy2 n -> (Limited a n => r) -> r
+    default unsafeWithLimited
+        :: forall n r lim proxy1 proxy2. (Limit a ~ 'Just lim)
+        => proxy1 a -> proxy2 n -> (Limited a n => r) -> r
+    unsafeWithLimited _ _ k = case unsafeCoerce Refl :: (n <=? lim) :~: 'True of
+        Refl -> k
+
 instance SaneIntegral Integer where
     type Limit Integer = 'Nothing
     modAdd n a b = case a + b of
@@ -113,6 +121,7 @@ instance SaneIntegral Integer where
         r -> r
     modSub n a b = if a >= b then a - b else n - b + a
     modMul n a b = (a * b) `mod` n
+    unsafeWithLimited _ _ k = k
 
 #if MIN_VERSION_base(4,8,0)
 instance SaneIntegral Natural where
@@ -122,6 +131,7 @@ instance SaneIntegral Natural where
         r -> r
     modSub n a b = if a >= b then a - b else n - b + a
     modMul n a b = (a * b) `mod` n
+    unsafeWithLimited _ _ k = k
 #endif
 
 instance SaneIntegral Word where
@@ -252,7 +262,7 @@ withIntegral
     :: forall a n r proxy1 proxy2. (SaneIntegral a, KnownIntegral a n)
     => proxy1 a -> proxy2 n -> (KnownNat n => r) -> r
 withIntegral _ _ k = case someNatVal n of
-    Nothing -> error $ "withIntegral: got KnowIntegral instance dictionary "
+    Nothing -> error $ "withIntegral: got KnownIntegral instance dictionary "
         ++ " for which toInteger returns " ++ show n
     Just (SomeNat (_ :: Proxy m)) -> case unsafeCoerce Refl :: n :~: m of
         Refl -> k
@@ -261,10 +271,10 @@ withIntegral _ _ k = case someNatVal n of
 
 -- | Recover a 'Limited' constraint from a 'KnownIntegral' constraint.
 withLimited
-    :: forall a n r lim proxy1 proxy2. (Limit a ~ 'Just lim, KnownIntegral a n)
+    :: forall a n r proxy1 proxy2. (SaneIntegral a, KnownIntegral a n)
     => proxy1 a -> proxy2 n -> (Limited a n => r) -> r
-withLimited _ _ k = case unsafeCoerce Refl :: (n <=? lim) :~: 'True of
-    Refl -> k
+withLimited = unsafeWithLimited
+  where _n = intVal_ :: Tagged n a
 {-# INLINABLE withLimited #-}
 
 -- | Finite number type. The type @'Finite' a n@ is inhabited by exactly @n@

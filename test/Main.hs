@@ -97,13 +97,12 @@ data SLimited a where
     SLimited :: (Limited a n, KnownNat n) => Proxy n -> SLimited a
 
 mkLimited
-    :: forall a lim. (Limit a ~ 'Just lim, KnownNat lim)
+    :: forall a lim. (SaneIntegral a, Limit a ~ 'Just lim, KnownNat lim)
     => Integer -> Maybe (SLimited a)
 mkLimited n = case someNatVal n of
-    Just (SomeNat (p :: Proxy b))
+    Just (SomeNat p)
         | n <= natVal @lim Proxy
-        , Refl :: (b <=? lim) :~: 'True <- unsafeCoerce Refl
-        -> Just $ SLimited p
+        -> Just $ unsafeWithLimited (Proxy @a) p SLimited p
     _ -> Nothing
 
 mkUnlimited
