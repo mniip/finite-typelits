@@ -107,6 +107,10 @@ class Integral a => SaneIntegral a where
     modMul n a b = fromInteger
         (modMul (toInteger n) (toInteger a) (toInteger b) :: Integer)
 
+    -- | Unsafely obtain evidence that @n <= Limit a@. When 'Limit' is 'Nothing'
+    -- there is no evidence to obtain, and @\\_ _ k -> k@ is a valid
+    -- implementation. When 'Limit' is a 'Just', the default implementation
+    -- should work.
     unsafeWithLimited :: proxy1 a -> proxy2 n -> (Limited a n => r) -> r
     default unsafeWithLimited
         :: forall n r lim proxy1 proxy2. (Limit a ~ 'Just lim)
