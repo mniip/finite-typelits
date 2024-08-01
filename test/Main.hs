@@ -1068,6 +1068,27 @@ prop_combineExponential_separateExponential = forType $ \(_ :: Proxy a) ->
     f `seq` -- could be discard
         combineExponential (separateExponential @n @m @a f) === f
 
+prop_valid_castFinite = forType $ \(_ :: Proxy b) ->
+    forType $ \(_ :: Proxy a) ->
+    forPositiveLimit @b $ \n (_ :: Proxy n) ->
+    unsafeWithKnownIntegral @n @a n $
+    property $ \(Edgy x :: Edgy a n) ->
+        isValidFinite $ castFinite @b x
+prop_sym_castFinite = forType $ \(_ :: Proxy a) ->
+    forType $ \(_ :: Proxy b) ->
+    forPositiveLimit @a $ \n (_ :: Proxy n) ->
+    unsafeWithKnownIntegral @n @b n $
+    property $ \(Edgy x :: Edgy b n) ->
+        castFinite @b (castFinite @a x) === x
+prop_trans_castFinite = forType $ \(_ :: Proxy a) ->
+    forType $ \(_ :: Proxy b) ->
+    forType $ \(_ :: Proxy c) ->
+    forPositiveLimit @a $ \n (_ :: Proxy n) ->
+    unsafeWithKnownIntegral @n @b n $
+    unsafeWithKnownIntegral @n @c n $
+    property $ \(Edgy x :: Edgy a n) ->
+        castFinite @c (castFinite @b x) === castFinite @c x
+
 return []
 main = $quickCheckAll >>= \case
     True -> pure ()
