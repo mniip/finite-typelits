@@ -28,6 +28,7 @@ jobs:
           - "9.8.2"
           - "9.10.1"
           - "9.12.2"
+          - "9.14.1"
       fail-fast: false
     name: Build on Linux, GHC ${{ matrix.ghc_version }}
     runs-on: ${{ matrix.platform }}
