@@ -30,5 +30,5 @@ test-suite finite-typelits-tests
   build-depends:       finite-typelits
                      , base >= 4.9 && < 4.23
                      , deepseq >= 1.4 && < 1.6
-                     , QuickCheck >= 2.12 && < 2.16
+                     , QuickCheck >= 2.12 && < 2.18
   default-language:    Haskell2010

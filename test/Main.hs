@@ -1,4 +1,5 @@
 {-# LANGUAGE AllowAmbiguousTypes #-}
+{-# LANGUAGE CPP #-}
 {-# LANGUAGE ConstraintKinds #-}
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE FlexibleContexts #-}
@@ -45,8 +46,10 @@ instance (Integral a, Arbitrary a) => Arbitrary (SmallNonNeg a) where
     arbitrary = SmallNonNeg <$> arbitrarySizedNatural
     shrink (SmallNonNeg x) = SmallNonNeg <$> shrink x
 
+#if !MIN_VERSION_QuickCheck(2,17,0)
 instance Arbitrary Natural where
     arbitrary = fromInteger . getNonNegative <$> arbitrary
+#endif
 
 instance CoArbitrary Natural where
     coarbitrary n = coarbitrary (toInteger n)
