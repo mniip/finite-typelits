@@ -51,8 +51,10 @@ instance Arbitrary Natural where
     arbitrary = fromInteger . getNonNegative <$> arbitrary
 #endif
 
+#if !MIN_VERSION_QuickCheck(2,18,0)
 instance CoArbitrary Natural where
     coarbitrary n = coarbitrary (toInteger n)
+#endif
 
 newtype Small a n = Small (Finite a n)
     deriving (Show)
